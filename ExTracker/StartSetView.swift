@@ -1,8 +1,19 @@
 import SwiftUI
 
 struct StartSetView: View {
+    struct PreviousSet {
+        var weight: String
+        var restMinutes: Int
+        var restSeconds: Int
+    }
+
     let exerciseName: String
     var onFinish: (_ weight: String, _ reps: String, _ restMinutes: Int, _ restSeconds: Int) -> Void
+
+    // Optional sources for prefilling values. Provide the most recent set in this session if available;
+    // otherwise provide the final set from the previous session.
+    var currentSessionLastSet: PreviousSet? = nil
+    var previousSessionFinalSet: PreviousSet? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -70,6 +81,9 @@ struct StartSetView: View {
         } message: {
             Text("Time to start your next set of \(exerciseName).")
         }
+        .onAppear {
+            prefillFromHistoryIfNeeded()
+        }
         .onDisappear { restTimer?.invalidate() }
     }
 
@@ -105,8 +119,31 @@ struct StartSetView: View {
         let s = seconds % 60
         return String(format: "%d:%02d", m, s)
     }
+
+    private func prefillFromHistoryIfNeeded() {
+        // Only prefill if user hasn't typed anything and rest is still at initial defaults
+        let isWeightDefault = weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let isRestDefault = (restMinutes == 2 && restSeconds == 0)
+        guard isWeightDefault || isRestDefault else { return }
+
+        let source = currentSessionLastSet ?? previousSessionFinalSet
+        guard let source else { return }
+
+        if isWeightDefault {
+            weight = source.weight
+        }
+        if isRestDefault {
+            restMinutes = max(0, source.restMinutes)
+            restSeconds = min(max(0, source.restSeconds), 59)
+        }
+    }
 }
 
 #Preview {
-    StartSetView(exerciseName: "Bench Press") { _,_,_,_ in }
+    StartSetView(
+        exerciseName: "Bench Press",
+        onFinish: { _,_,_,_ in },
+        currentSessionLastSet: StartSetView.PreviousSet(weight: "135 lb", restMinutes: 2, restSeconds: 0),
+        previousSessionFinalSet: StartSetView.PreviousSet(weight: "130 lb", restMinutes: 2, restSeconds: 30)
+    )
 }

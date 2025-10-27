@@ -128,14 +128,44 @@ struct ExerciseSessionView: View {
             .padding([.horizontal, .bottom])
         }
         .sheet(isPresented: $showingStartSet) {
-            StartSetView(exerciseName: exercise.name) { weight, reps, min, sec in
-                // Append the set to the session list
-                let set = SessionSet(weight: weight, reps: reps, timestamp: Date())
-                sessionSets.append(set)
-                // Dismiss the sheet back to Exercise page
-                showingStartSet = false
-                startRestTimer(totalSeconds: max(0, min * 60 + sec))
-            }
+            // Determine the last set in the current session, if any
+            let currentLast: StartSetView.PreviousSet? = {
+                guard let last = sessionSets.last else { return nil }
+                return StartSetView.PreviousSet(
+                    weight: last.weight,
+                    restMinutes: 2, // default or last used; no per-set rest stored in sessionSets
+                    restSeconds: 0
+                )
+            }()
+
+            // Determine the final set from the previous session, if any
+            let previousFinal: StartSetView.PreviousSet? = {
+                let weights = exercise.lastSessionWeights
+                let reps = exercise.lastSessionReps
+                let count = max(weights.count, reps.count)
+                guard count > 0 else { return nil }
+                let lastWeight = (count - 1) < weights.count ? weights[count - 1] : ""
+                // If you later store rest per set, use it here. For now, fall back to a sensible default.
+                return StartSetView.PreviousSet(
+                    weight: lastWeight,
+                    restMinutes: 2,
+                    restSeconds: 0
+                )
+            }()
+
+            StartSetView(
+                exerciseName: exercise.name,
+                onFinish: { weight, reps, min, sec in
+                    // Append the set to the session list
+                    let set = SessionSet(weight: weight, reps: reps, timestamp: Date())
+                    sessionSets.append(set)
+                    // Dismiss the sheet back to Exercise page
+                    showingStartSet = false
+                    startRestTimer(totalSeconds: max(0, min * 60 + sec))
+                },
+                currentSessionLastSet: currentLast,
+                previousSessionFinalSet: previousFinal
+            )
         }
     }
 

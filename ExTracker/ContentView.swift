@@ -37,13 +37,28 @@ struct ContentView: View {
                         HStack(spacing: 12) {
                             Image(systemName: exercise.category.systemImage)
                                 .foregroundStyle(.tint)
-                            VStack(alignment: .leading) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(exercise.name)
+                                    .font(.headline)
+                                HStack(spacing: 8) {
+                                    if let last = exercise.lastPerformed {
+                                        Text(last, style: .date)
+                                    } else {
+                                        Text("N/A")
+                                    }
+                                    Text("•")
+                                    Text("Every \(exercise.frequency) day\(exercise.frequency == 1 ? "" : "s")")
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             }
                             Spacer()
                             Text("\(exercise.daysLeft)")
                                 .monospacedDigit()
-                                .foregroundStyle(exercise.daysLeft <= 3 ? .red : .secondary)
+                                .foregroundStyle(
+                                    exercise.daysLeft <= 0 ? .red :
+                                    (exercise.daysLeft == 1 ? .orange : .green)
+                                )
                         }
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("\(exercise.category.displayName), \(exercise.name), days left \(exercise.daysLeft)")
@@ -155,6 +170,8 @@ struct ContentView: View {
                     }
                 }
             }
+            .navigationTitle("Exercises")
+            .navigationBarTitleDisplayMode(.large)
         } detail: {
             Text("Select an exercise")
         }

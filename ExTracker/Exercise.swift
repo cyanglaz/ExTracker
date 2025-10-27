@@ -44,8 +44,11 @@ final class Exercise {
     @Transient
     var daysLeft: Int {
         get {
+            if lastPerformed  == nil {
+                return 0
+            }
             let diffTodayFromLastPerformed = Calendar.current.dateComponents([.day], from: lastPerformed ?? createdAt, to: Date()).day ?? 0
-            return max(frequency - diffTodayFromLastPerformed, 0)
+            return frequency - diffTodayFromLastPerformed
         }
     }
     
