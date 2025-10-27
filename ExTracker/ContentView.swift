@@ -36,7 +36,8 @@ struct ContentView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: exercise.category.systemImage)
-                                .foregroundStyle(.tint)
+                                .frame(width: 28, alignment: .trailing)
+                                .foregroundStyle(exercise.category.displayColor)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(exercise.name)
                                     .font(.headline)

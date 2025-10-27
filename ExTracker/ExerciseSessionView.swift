@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 #if canImport(UIKit)
 import UIKit
@@ -13,6 +14,7 @@ struct ExerciseSessionView: View {
     @State private var existingRecord: ExerciseSessionRecord? = nil
     @State private var isEditingExisting = false
     @State private var lastRecord: ExerciseSessionRecord? = nil
+    @State private var recentRecords: [ExerciseSessionRecord] = [] // sorted desc by date
 
     @State private var sessionSets: [SessionSet] = []
     @State private var showingStartSet = false
@@ -22,6 +24,7 @@ struct ExerciseSessionView: View {
     @State private var remainingSeconds: Int = 0
     @State private var totalSeconds: Int = 0
     @State private var restTimer: Timer? = nil
+    @State private var restEndDate: Date? = nil
 
     struct SessionSet: Identifiable {
         let id = UUID()
@@ -31,9 +34,9 @@ struct ExerciseSessionView: View {
     }
 
     var body: some View {
-        Form {
+        SwiftUI.Form {
             if isResting {
-                Section("Rest timer") {
+                SwiftUI.Section("Rest timer") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             ProgressView(value: Double(max(0, remainingSeconds)), total: Double(max(1, totalSeconds)))
@@ -49,7 +52,12 @@ struct ExerciseSessionView: View {
                 }
             }
 
-            Section(header: HStack { Text("Sets this session"); Spacer() }) {
+            SwiftUI.Section(header: HStack {
+                Image(systemName: exercise.category.systemImage)
+                    .foregroundStyle(exercise.category.displayColor)
+                Text("Sets this session")
+                Spacer()
+            }) {
                 if sessionSets.isEmpty {
                     Text("No sets yet").foregroundStyle(.secondary)
                 } else {
@@ -77,24 +85,24 @@ struct ExerciseSessionView: View {
                 }
             }
 
-            if let last = exercise.lastPerformed, !exercise.lastSessionReps.isEmpty || !exercise.lastSessionWeights.isEmpty {
-                Section("Last session") {
+            if let displayRecord = (isEditingExisting ? (recentRecords.count > 1 ? recentRecords[1] : nil) : recentRecords.first) {
+                SwiftUI.Section("Last session") {
                     HStack {
                         Image(systemName: "calendar")
-                        Text("\(daysAgo(from: last)) days ago")
+                        Text("\(daysAgo(from: displayRecord.date)) days ago")
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text(last, style: .date)
+                        Text(displayRecord.date, style: .date)
                     }
-                    let count = max(exercise.lastSessionReps.count, exercise.lastSessionWeights.count)
+                    let count = max(displayRecord.reps.count, displayRecord.weights.count)
                     ForEach(0..<count, id: \.self) { idx in
                         HStack(spacing: 12) {
-                            let w = idx < exercise.lastSessionWeights.count ? exercise.lastSessionWeights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                            let w = idx < displayRecord.weights.count ? displayRecord.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : ""
                             if !w.isEmpty {
                                 Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
                             }
                             Spacer()
-                            Text("x \(idx < exercise.lastSessionReps.count ? exercise.lastSessionReps[idx] : "-")")
+                            Text("x \(idx < displayRecord.reps.count ? displayRecord.reps[idx] : "-")")
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
@@ -114,50 +122,29 @@ struct ExerciseSessionView: View {
                 }
             }
         }
-        .navigationTitle("Exercise")
-        .onAppear {
-            print("[ExerciseSessionView] appeared for: \(exercise.name)")
-            if let record = existingRecord, !isEditingExisting {
-                // Load sets from the existing record to continue or edit
-                self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
-                    SessionSet(weight: w, reps: r, timestamp: record.date)
-                }
-                self.isEditingExisting = true
-            }
-
-            // Fetch the most recent session record for this exercise if not already editing one
-            if existingRecord == nil {
-                let targetID = exercise.id
-                var descriptor = FetchDescriptor<ExerciseSessionRecord>(
-                    predicate: #Predicate { $0.exerciseID == targetID },
-                    sortBy: [SortDescriptor(\.date, order: .reverse)]
-                )
-                descriptor.fetchLimit = 1
-                do {
-                    let results = try modelContext.fetch(descriptor)
-                    self.lastRecord = results.first
-                } catch {
-                    print("Failed to fetch last record: \(error)")
+        .navigationTitle(exercise.name)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(content: {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: {
+                    saveSessionIfNeeded()
+                    sessionSets.removeAll()
+                    cancelRest()
+                    dismiss()
+                }) {
+                    Label("Back", systemImage: "chevron.left")
                 }
             }
-        }
-        .onDisappear {
-            print("[ExerciseSessionView] disappeared for: \(exercise.name)")
-            restTimer?.invalidate()
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink {
                     SessionsHistoryView(exercise: exercise)
                 } label: {
                     Image(systemName: "clock.arrow.circlepath")
                 }
                 .accessibilityLabel("Previous Session")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
+
                 EditButton()
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
+
                 Button(action: { showingStartSet = true }) {
                     Image(systemName: "plus")
                 }
@@ -172,7 +159,7 @@ struct ExerciseSessionView: View {
                     }
                 }
             }
-        }
+        })
         .safeAreaInset(edge: .bottom) {
             Button(action: completeSession) {
                 Text("Complete")
@@ -224,52 +211,9 @@ struct ExerciseSessionView: View {
         }
     }
 
-    private func startRestTimer(totalSeconds: Int) {
-        guard totalSeconds > 0 else { return }
-        self.totalSeconds = totalSeconds
-        self.remainingSeconds = totalSeconds
-        isResting = true
-        isPaused = false
-        restTimer?.invalidate()
-        restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            guard !isPaused else { return }
-            if remainingSeconds > 0 {
-                remainingSeconds -= 1
-            } else {
-                timer.invalidate()
-                isResting = false
-                playCompletionFeedback()
-            }
-        }
-    }
+    private func saveSessionIfNeeded() {
+        guard !sessionSets.isEmpty else { return }
 
-    private func togglePause() {
-        guard isResting else { return }
-        isPaused.toggle()
-    }
-
-    private func cancelRest() {
-        restTimer?.invalidate()
-        isResting = false
-        isPaused = false
-        remainingSeconds = 0
-        totalSeconds = 0
-    }
-
-    private func playCompletionFeedback() {
-        #if canImport(UIKit)
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
-        #endif
-    }
-
-    private func timeString(from seconds: Int) -> String {
-        let m = seconds / 60
-        let s = seconds % 60
-        return String(format: "%d:%02d", m, s)
-    }
-    
-    private func completeSession() {
         // Save last performed date
         exercise.lastPerformed = Date()
 
@@ -278,7 +222,6 @@ struct ExerciseSessionView: View {
             record.date = exercise.lastPerformed ?? Date()
             record.weights = sessionSets.map { $0.weight }
             record.reps = sessionSets.map { $0.reps }
-            // ModelContext should observe changes automatically
         } else {
             // Create a new record
             let record = ExerciseSessionRecord(
@@ -295,6 +238,19 @@ struct ExerciseSessionView: View {
         exercise.lastSessionReps = sessionSets.map { $0.reps }
         // Reset daysLeft to at least 1 (acts as max frequency placeholder)
         exercise.frequency = max(exercise.frequency, 1)
+    }
+    
+    private func completeSession() {
+        // If there are no sets, do not save anything
+        guard !sessionSets.isEmpty else {
+            // Stop any running timer and dismiss
+            cancelRest()
+            dismiss()
+            return
+        }
+
+        saveSessionIfNeeded()
+
         // Clear current session sets
         sessionSets.removeAll()
         // Stop any running timer
@@ -316,6 +272,100 @@ struct ExerciseSessionView: View {
         let startOfThatDay = Calendar.current.startOfDay(for: date)
         let comps = Calendar.current.dateComponents([.day], from: startOfThatDay, to: startOfToday)
         return max(0, comps.day ?? 0)
+    }
+
+    private func startRestTimer(totalSeconds: Int) {
+        guard totalSeconds > 0 else { return }
+        self.totalSeconds = totalSeconds
+        self.restEndDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
+        self.remainingSeconds = totalSeconds
+        self.isResting = true
+        self.isPaused = false
+
+        // Schedule local notification for when the timer ends
+        scheduleRestCompletionNotification(at: self.restEndDate!)
+
+        // Invalidate any existing timer and start a new UI timer
+        restTimer?.invalidate()
+        restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            guard !isPaused else { return }
+            let remaining = max(0, Int((restEndDate ?? Date()).timeIntervalSinceNow.rounded()))
+            remainingSeconds = remaining
+            if remaining <= 0 {
+                timer.invalidate()
+                isResting = false
+                restEndDate = nil
+                playCompletionFeedback()
+            }
+        }
+    }
+
+    private func togglePause() {
+        guard isResting else { return }
+        isPaused.toggle()
+        // When pausing, capture remainingSeconds; when resuming, recompute end date
+        if isPaused {
+            // Freeze remainingSeconds by stopping updates; timer closure respects isPaused
+        } else {
+            // Resuming: set a new end date from current remainingSeconds
+            if remainingSeconds > 0 {
+                restEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
+                // Re-schedule the notification for the new end date
+                scheduleRestCompletionNotification(at: restEndDate!)
+            }
+        }
+    }
+
+    private func cancelRest() {
+        restTimer?.invalidate()
+        isResting = false
+        isPaused = false
+        remainingSeconds = 0
+        totalSeconds = 0
+        restEndDate = nil
+        cancelRestCompletionNotification()
+    }
+
+    private func playCompletionFeedback() {
+        #if canImport(UIKit)
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        #endif
+    }
+
+    private func scheduleRestCompletionNotification(at date: Date) {
+        let center = UNUserNotificationCenter.current()
+        // Remove any existing pending notification for rest completion
+        cancelRestCompletionNotification()
+
+        let content = UNMutableNotificationContent()
+        content.title = "Rest complete"
+        content.body = "Time to start your next set."
+        content.sound = .default
+        if #available(iOS 15.0, *) {
+            content.interruptionLevel = .timeSensitive
+        }
+
+        let triggerDate = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDate, repeats: false)
+
+        let request = UNNotificationRequest(identifier: "exercise.rest.complete", content: content, trigger: trigger)
+        center.add(request) { error in
+            if let error = error {
+                print("Failed to schedule rest notification: \(error)")
+            }
+        }
+    }
+
+    private func cancelRestCompletionNotification() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["exercise.rest.complete"])
+    }
+
+    private func timeString(from seconds: Int) -> String {
+        let m = seconds / 60
+        let s = seconds % 60
+        return String(format: "%d:%02d", m, s)
     }
 }
 

@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 enum ExerciseCategory: String, Codable, CaseIterable, Identifiable {
-    case chest, arm, shoulder, back, leg, core
+    case chest, arm, shoulder, back, leg, core, cardio
 
     var id: String { rawValue }
 
@@ -14,17 +14,19 @@ enum ExerciseCategory: String, Codable, CaseIterable, Identifiable {
         case .back: return "Back"
         case .leg: return "Leg"
         case .core: return "Core"
+        case .cardio: return "Cardio"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .chest: return "heart.fill"
+        case .chest: return "figure.archery"
         case .arm: return "figure.strengthtraining.traditional"
-        case .shoulder: return "figure.cooldown"
-        case .back: return "rectangle.stack.fill"
-        case .leg: return "figure.walk"
-        case .core: return "circle.hexagonpath.fill"
+        case .shoulder: return "figure.mixed.cardio"
+        case .back: return "figure.yoga"
+        case .leg: return "figure.strengthtraining.functional"
+        case .core: return "figure.core.training"
+        case .cardio: return "heart.fill"
         }
     }
 }

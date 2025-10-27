@@ -5,6 +5,10 @@ struct SessionsHistoryView: View {
     let exercise: Exercise
     @Query private var records: [ExerciseSessionRecord]
 
+    @Environment(\.modelContext) private var modelContext
+    @State private var recordPendingDeletion: ExerciseSessionRecord? = nil
+    @State private var showDeleteAlert = false
+
     init(exercise: Exercise) {
         self.exercise = exercise
         let exerciseID = exercise.id
@@ -39,10 +43,28 @@ struct SessionsHistoryView: View {
                             }
                         }
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            recordPendingDeletion = rec
+                            showDeleteAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
         .navigationTitle("Sessions")
+        .alert("Delete session?", isPresented: $showDeleteAlert, presenting: recordPendingDeletion) { record in
+            Button("Delete", role: .destructive) {
+                deleteSession(record)
+            }
+            Button("Cancel", role: .cancel) {
+                recordPendingDeletion = nil
+            }
+        } message: { record in
+            Text("This will permanently delete the session from \(record.date.formatted(date: .abbreviated, time: .shortened)). This action cannot be undone.")
+        }
     }
 
     private func daysAgo(from date: Date) -> Int {
@@ -50,6 +72,16 @@ struct SessionsHistoryView: View {
         let startOfThatDay = Calendar.current.startOfDay(for: date)
         let comps = Calendar.current.dateComponents([.day], from: startOfThatDay, to: startOfToday)
         return max(0, comps.day ?? 0)
+    }
+    
+    private func deleteSession(_ record: ExerciseSessionRecord) {
+        modelContext.delete(record)
+        recordPendingDeletion = nil
+        // If using a local array rather than @Query, also remove it from that array here.
+        #if canImport(UIKit)
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        #endif
     }
 }
 
