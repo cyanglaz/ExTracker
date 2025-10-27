@@ -10,6 +10,9 @@ struct ExerciseSessionView: View {
     @Environment(\.dismiss) private var dismiss
 
     let exercise: Exercise
+    @State private var existingRecord: ExerciseSessionRecord? = nil
+    @State private var isEditingExisting = false
+    @State private var lastRecord: ExerciseSessionRecord? = nil
 
     @State private var sessionSets: [SessionSet] = []
     @State private var showingStartSet = false
@@ -68,6 +71,9 @@ struct ExerciseSessionView: View {
                         }
                         .accessibilityLabel("\(set.weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No weight" : "Weight \(set.weight) pounds"), x \(set.reps)")
                     }
+                    .onDelete { indexSet in
+                        sessionSets.remove(atOffsets: indexSet)
+                    }
                 }
             }
 
@@ -93,11 +99,48 @@ struct ExerciseSessionView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    if let record = lastRecord {
+                        Button {
+                            // Load the record into the current view for editing/continuation
+                            existingRecord = record
+                            self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
+                                SessionSet(weight: w, reps: r, timestamp: record.date)
+                            }
+                            self.isEditingExisting = true
+                        } label: {
+                            Label(isEditingExisting ? "Editing last session" : "Continue last session", systemImage: isEditingExisting ? "pencil" : "play.circle")
+                        }
+                    }
                 }
             }
         }
         .navigationTitle("Exercise")
-        .onAppear { print("[ExerciseSessionView] appeared for: \(exercise.name)") }
+        .onAppear {
+            print("[ExerciseSessionView] appeared for: \(exercise.name)")
+            if let record = existingRecord, !isEditingExisting {
+                // Load sets from the existing record to continue or edit
+                self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
+                    SessionSet(weight: w, reps: r, timestamp: record.date)
+                }
+                self.isEditingExisting = true
+            }
+
+            // Fetch the most recent session record for this exercise if not already editing one
+            if existingRecord == nil {
+                let targetID = exercise.id
+                var descriptor = FetchDescriptor<ExerciseSessionRecord>(
+                    predicate: #Predicate { $0.exerciseID == targetID },
+                    sortBy: [SortDescriptor(\.date, order: .reverse)]
+                )
+                descriptor.fetchLimit = 1
+                do {
+                    let results = try modelContext.fetch(descriptor)
+                    self.lastRecord = results.first
+                } catch {
+                    print("Failed to fetch last record: \(error)")
+                }
+            }
+        }
         .onDisappear {
             print("[ExerciseSessionView] disappeared for: \(exercise.name)")
             restTimer?.invalidate()
@@ -112,10 +155,22 @@ struct ExerciseSessionView: View {
                 .accessibilityLabel("Previous Session")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                EditButton()
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: { showingStartSet = true }) {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Start Set")
+            }
+            ToolbarItem(placement: .bottomBar) {
+                if isEditingExisting {
+                    Button(role: .destructive) {
+                        deleteEntireSession()
+                    } label: {
+                        Label("Delete Session", systemImage: "trash")
+                    }
+                }
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -217,8 +272,24 @@ struct ExerciseSessionView: View {
     private func completeSession() {
         // Save last performed date
         exercise.lastPerformed = Date()
-        let record = ExerciseSessionRecord(exerciseID: exercise.id, date: exercise.lastPerformed ?? Date(), weights: sessionSets.map { $0.weight }, reps: sessionSets.map { $0.reps })
-        modelContext.insert(record)
+
+        if var record = existingRecord {
+            // Update existing record in place
+            record.date = exercise.lastPerformed ?? Date()
+            record.weights = sessionSets.map { $0.weight }
+            record.reps = sessionSets.map { $0.reps }
+            // ModelContext should observe changes automatically
+        } else {
+            // Create a new record
+            let record = ExerciseSessionRecord(
+                exerciseID: exercise.id,
+                date: exercise.lastPerformed ?? Date(),
+                weights: sessionSets.map { $0.weight },
+                reps: sessionSets.map { $0.reps }
+            )
+            modelContext.insert(record)
+        }
+
         // Copy current session sets into exercise's last session storage
         exercise.lastSessionWeights = sessionSets.map { $0.weight }
         exercise.lastSessionReps = sessionSets.map { $0.reps }
@@ -229,6 +300,14 @@ struct ExerciseSessionView: View {
         // Stop any running timer
         cancelRest()
         // Dismiss back to main list
+        dismiss()
+    }
+    
+    private func deleteEntireSession() {
+        guard let record = existingRecord else { return }
+        modelContext.delete(record)
+        // If the deleted record was the last performed one, you might also clear exercise.lastSession* here.
+        sessionSets.removeAll()
         dismiss()
     }
     
