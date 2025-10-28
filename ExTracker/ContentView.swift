@@ -28,7 +28,7 @@ struct ContentView: View {
     @State private var editCategory: ExerciseCategory = .chest
 
     var body: some View {
-        NavigationSplitView {
+        NavigationStack {
             List {
                 ForEach(exercises) { exercise in
                     NavigationLink {
@@ -171,8 +171,6 @@ struct ContentView: View {
             }
             .navigationTitle("Exercises")
             .navigationBarTitleDisplayMode(.large)
-        } detail: {
-            Text("Select an exercise")
         }
     }
 
