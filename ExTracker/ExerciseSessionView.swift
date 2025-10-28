@@ -11,10 +11,10 @@ struct ExerciseSessionView: View {
     @Environment(\.dismiss) private var dismiss
 
     let exercise: Exercise
+    @Query private var records: [ExerciseSessionRecord]
+
     @State private var existingRecord: ExerciseSessionRecord? = nil
     @State private var isEditingExisting = false
-    @State private var lastRecord: ExerciseSessionRecord? = nil
-    @State private var recentRecords: [ExerciseSessionRecord] = [] // sorted desc by date
 
     @State private var sessionSets: [SessionSet] = []
     @State private var showingStartSet = false
@@ -31,6 +31,15 @@ struct ExerciseSessionView: View {
         let weight: String
         let reps: String
         let timestamp: Date
+    }
+
+    init(exercise: Exercise) {
+        self.exercise = exercise
+        let exerciseID = exercise.id
+        self._records = Query(
+            filter: #Predicate<ExerciseSessionRecord> { $0.exerciseID == exerciseID },
+            sort: [SortDescriptor(\.date, order: .reverse)]
+        )
     }
 
     var body: some View {
@@ -85,7 +94,7 @@ struct ExerciseSessionView: View {
                 }
             }
 
-            if let displayRecord = (isEditingExisting ? (recentRecords.count > 1 ? recentRecords[1] : nil) : recentRecords.first) {
+            if let displayRecord = (isEditingExisting ? records.dropFirst().first : records.first) {
                 SwiftUI.Section("Last session") {
                     HStack {
                         Image(systemName: "calendar")
@@ -107,7 +116,7 @@ struct ExerciseSessionView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    if let record = lastRecord {
+                    if let record = records.first {
                         Button {
                             // Load the record into the current view for editing/continuation
                             existingRecord = record
@@ -137,7 +146,7 @@ struct ExerciseSessionView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink {
-                    SessionsHistoryView(exercise: exercise)
+                    SessionsHistoryView(exercise: exercise, records: records)
                 } label: {
                     Image(systemName: "clock.arrow.circlepath")
                 }
@@ -145,7 +154,9 @@ struct ExerciseSessionView: View {
 
                 EditButton()
 
-                Button(action: { showingStartSet = true }) {
+                Button(action: {
+                    showingStartSet = true
+                }) {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Start Set")
@@ -217,7 +228,7 @@ struct ExerciseSessionView: View {
         // Save last performed date
         exercise.lastPerformed = Date()
 
-        if var record = existingRecord {
+        if let record = existingRecord {
             // Update existing record in place
             record.date = exercise.lastPerformed ?? Date()
             record.weights = sessionSets.map { $0.weight }

@@ -28,7 +28,7 @@ struct ContentView: View {
     @State private var editCategory: ExerciseCategory = .chest
 
     var body: some View {
-        NavigationSplitView {
+        NavigationStack {
             List {
                 ForEach(exercises) { exercise in
                     NavigationLink {
@@ -149,7 +149,7 @@ struct ContentView: View {
                                 }
                             }
                         }
-
+                        
                         Section {
                             Button(role: .destructive) {
                                 deleteEditedExercise()
@@ -158,6 +158,7 @@ struct ContentView: View {
                                     .frame(maxWidth: .infinity)
                             }
                         }
+                        
                     }
                     .navigationTitle("Edit Exercise")
                     .toolbar {
@@ -173,8 +174,6 @@ struct ContentView: View {
             }
             .navigationTitle("Exercises")
             .navigationBarTitleDisplayMode(.large)
-        } detail: {
-            Text("Select an exercise")
         }
     }
 
