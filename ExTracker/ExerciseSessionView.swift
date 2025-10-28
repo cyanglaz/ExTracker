@@ -31,6 +31,8 @@ struct ExerciseSessionView: View {
         let weight: String
         let reps: String
         let timestamp: Date
+        let restMinutes: Int
+        let restSeconds: Int
     }
 
     init(exercise: Exercise) {
@@ -121,7 +123,7 @@ struct ExerciseSessionView: View {
                             // Load the record into the current view for editing/continuation
                             existingRecord = record
                             self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
-                                SessionSet(weight: w, reps: r, timestamp: record.date)
+                                SessionSet(weight: w, reps: r, timestamp: record.date, restMinutes: 0, restSeconds: 0)
                             }
                             self.isEditingExisting = true
                         } label: {
@@ -186,8 +188,8 @@ struct ExerciseSessionView: View {
                 guard let last = sessionSets.last else { return nil }
                 return StartSetView.PreviousSet(
                     weight: last.weight,
-                    restMinutes: 2, // default or last used; no per-set rest stored in sessionSets
-                    restSeconds: 0
+                    restMinutes: last.restMinutes, // default or last used; no per-set rest stored in sessionSets
+                    restSeconds: last.restSeconds
                 )
             }()
 
@@ -202,7 +204,7 @@ struct ExerciseSessionView: View {
                 return StartSetView.PreviousSet(
                     weight: lastWeight,
                     restMinutes: 2,
-                    restSeconds: 0
+                    restSeconds: 30
                 )
             }()
 
@@ -210,7 +212,7 @@ struct ExerciseSessionView: View {
                 exerciseName: exercise.name,
                 onFinish: { weight, reps, min, sec in
                     // Append the set to the session list
-                    let set = SessionSet(weight: weight, reps: reps, timestamp: Date())
+                    let set = SessionSet(weight: weight, reps: reps, timestamp: Date(), restMinutes: min, restSeconds: sec)
                     sessionSets.append(set)
                     // Dismiss the sheet back to Exercise page
                     showingStartSet = false
