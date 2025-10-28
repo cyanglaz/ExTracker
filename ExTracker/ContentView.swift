@@ -131,41 +131,44 @@ struct ContentView: View {
                 }
             }
             .sheet(isPresented: $showingEditSheet) {
-                Form {
-                    Section("Details") {
-                        TextField("Exercise name", text: $editName)
-                        Picker("Category", selection: $editCategory) {
-                            ForEach(ExerciseCategory.allCases) { cat in
-                                Label(cat.displayName, systemImage: cat.systemImage)
-                                    .tag(cat)
+                NavigationStack {
+                    Form {
+                        Section("Details") {
+                            TextField("Exercise name", text: $editName)
+                            Picker("Category", selection: $editCategory) {
+                                ForEach(ExerciseCategory.allCases) { cat in
+                                    Label(cat.displayName, systemImage: cat.systemImage)
+                                        .tag(cat)
+                                }
+                            }
+                            Stepper(value: $editFrequency, in: 1...365) {
+                                HStack {
+                                    Text("Frequency (days)")
+                                    Spacer()
+                                    Text("\(editFrequency)").monospacedDigit()
+                                }
                             }
                         }
-                        Stepper(value: $editFrequency, in: 1...365) {
-                            HStack {
-                                Text("Frequency (days)")
-                                Spacer()
-                                Text("\(editFrequency)").monospacedDigit()
+                        
+                        Section {
+                            Button(role: .destructive) {
+                                deleteEditedExercise()
+                            } label: {
+                                Text("Delete Exercise")
+                                    .frame(maxWidth: .infinity)
                             }
                         }
+                        
                     }
-
-                    Section {
-                        Button(role: .destructive) {
-                            deleteEditedExercise()
-                        } label: {
-                            Text("Delete Exercise")
-                                .frame(maxWidth: .infinity)
+                    .navigationTitle("Edit Exercise")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { cancelEdit() }
                         }
-                    }
-                }
-                .navigationTitle("Edit Exercise")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { cancelEdit() }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") { saveEdit() }
-                            .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") { saveEdit() }
+                                .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
                     }
                 }
             }
