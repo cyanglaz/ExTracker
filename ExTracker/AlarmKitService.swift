@@ -44,17 +44,17 @@ final class AlarmKitService {
             // Build the presentation
             let alert = AlarmPresentation.Alert(
                 title: LocalizedStringResource(stringLiteral: title),
-                stopButton: AlarmButton(text: LocalizedStringResource(stringLiteral: "Stop"), textColor: Color.white, systemImageName: ""),
+                stopButton: AlarmButton(text: LocalizedStringResource(stringLiteral: "Stop"), textColor: Color.white, systemImageName: "stop.fill"),
                 secondaryButton: nil,
                 secondaryButtonBehavior: nil
             )
             let countdown = AlarmPresentation.Countdown(
                 title: "Resting",
-                pauseButton: AlarmButton(text: LocalizedStringResource(stringLiteral: "Pause"), textColor: Color.white, systemImageName: ""),
+                pauseButton: AlarmButton(text: LocalizedStringResource(stringLiteral: "Pause"), textColor: Color.white, systemImageName: "pause.fill"),
             )
             let paused = AlarmPresentation.Paused(
                 title: "Paused",
-                resumeButton: AlarmButton(text: LocalizedStringResource(stringLiteral: "Resume"), textColor: Color.white, systemImageName: ""),
+                resumeButton: AlarmButton(text: LocalizedStringResource(stringLiteral: "Resume"), textColor: Color.white, systemImageName: "arrow.trianglehead.clockwise"),
             )
             let presentation = AlarmPresentation(alert: alert, countdown: countdown, paused: paused)
 

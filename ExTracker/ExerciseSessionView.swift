@@ -231,7 +231,7 @@ struct ExerciseSessionView: View {
         // Save last performed date
         exercise.lastPerformed = Date()
 
-        if var record = existingRecord {
+        if let record = existingRecord {
             // Update existing record in place
             record.date = exercise.lastPerformed ?? Date()
             record.weights = sessionSets.map { $0.weight }
