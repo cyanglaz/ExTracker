@@ -3,16 +3,15 @@ import SwiftData
 
 struct SessionsHistoryView: View {
     let exercise: Exercise
-    @Query private var records: [ExerciseSessionRecord]
+    let records: [ExerciseSessionRecord]
 
     @Environment(\.modelContext) private var modelContext
     @State private var recordPendingDeletion: ExerciseSessionRecord? = nil
     @State private var showDeleteAlert = false
 
-    init(exercise: Exercise) {
+    init(exercise: Exercise, records: [ExerciseSessionRecord] = []) {
         self.exercise = exercise
-        let exerciseID = exercise.id
-        self._records = Query(filter: #Predicate<ExerciseSessionRecord> { $0.exerciseID == exerciseID }, sort: [SortDescriptor(\.date, order: .reverse)])
+        self.records = records
     }
 
     var body: some View {

@@ -146,7 +146,7 @@ struct ExerciseSessionView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink {
-                    SessionsHistoryView(exercise: exercise)
+                    SessionsHistoryView(exercise: exercise, records: records)
                 } label: {
                     Image(systemName: "clock.arrow.circlepath")
                 }
@@ -154,7 +154,9 @@ struct ExerciseSessionView: View {
 
                 EditButton()
 
-                Button(action: { showingStartSet = true }) {
+                Button(action: {
+                    showingStartSet = true
+                }) {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Start Set")
@@ -226,7 +228,7 @@ struct ExerciseSessionView: View {
         // Save last performed date
         exercise.lastPerformed = Date()
 
-        if var record = existingRecord {
+        if let record = existingRecord {
             // Update existing record in place
             record.date = exercise.lastPerformed ?? Date()
             record.weights = sessionSets.map { $0.weight }
