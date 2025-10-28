@@ -26,6 +26,7 @@ struct ExerciseSessionView: View {
     @State private var totalSeconds: Int = 0
     @State private var restTimer: Timer? = nil
     @State private var restEndDate: Date? = nil
+    @State private var restAlarmID: String? = nil
 
     struct SessionSet: Identifiable {
         let id = UUID()
@@ -219,6 +220,7 @@ struct ExerciseSessionView: View {
             )
         }
         .task {
+            AlarmService.shared.configureForegroundPresentation()
             await loadLastRecords()
         }
     }
@@ -289,13 +291,28 @@ struct ExerciseSessionView: View {
     private func startRestTimer(totalSeconds: Int) {
         guard totalSeconds > 0 else { return }
         self.totalSeconds = totalSeconds
-        self.restEndDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
         self.remainingSeconds = totalSeconds
         self.isResting = true
         self.isPaused = false
 
-        // Schedule local notification for when the timer ends
-        scheduleRestCompletionNotification(at: self.restEndDate!)
+        // Try AlarmKit (iOS 18+) first
+        Task { @MainActor in
+            if AlarmKitService.shared.isAvailable, await AlarmKitService.shared.requestAuthorizationIfNeeded() {
+                do {
+                    let id = try await AlarmKitService.shared.scheduleRestAlarm(seconds: TimeInterval(totalSeconds), title: "Rest complete for \(exercise.name)")
+                    self.restAlarmID = id.uuidString
+                    self.restEndDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
+                } catch {
+                    // Fall back to local notification if scheduling fails
+                    self.restEndDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
+                    self.restAlarmID = await AlarmService.shared.scheduleRestAlarm(at: self.restEndDate!)
+                }
+            } else {
+                // Fallback to local notification service
+                self.restEndDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
+                self.restAlarmID = await AlarmService.shared.scheduleRestAlarm(at: self.restEndDate!)
+            }
+        }
 
         // Invalidate any existing timer and start a new UI timer
         restTimer?.invalidate()
@@ -307,6 +324,7 @@ struct ExerciseSessionView: View {
                 timer.invalidate()
                 isResting = false
                 restEndDate = nil
+                restAlarmID = nil
                 playCompletionFeedback()
             }
         }
@@ -322,8 +340,8 @@ struct ExerciseSessionView: View {
             // Resuming: set a new end date from current remainingSeconds
             if remainingSeconds > 0 {
                 restEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
-                // Re-schedule the notification for the new end date
-                scheduleRestCompletionNotification(at: restEndDate!)
+                // Re-schedule rest completion alarm via AlarmService
+                Task { self.restAlarmID = await AlarmService.shared.scheduleRestAlarm(at: restEndDate!) }
             }
         }
     }
@@ -335,7 +353,7 @@ struct ExerciseSessionView: View {
         remainingSeconds = 0
         totalSeconds = 0
         restEndDate = nil
-        cancelRestCompletionNotification()
+        Task { await AlarmService.shared.cancelRestAlarm(id: self.restAlarmID); await MainActor.run { self.restAlarmID = nil } }
     }
 
     private func playCompletionFeedback() {
@@ -343,35 +361,6 @@ struct ExerciseSessionView: View {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
         #endif
-    }
-
-    private func scheduleRestCompletionNotification(at date: Date) {
-        let center = UNUserNotificationCenter.current()
-        // Remove any existing pending notification for rest completion
-        cancelRestCompletionNotification()
-
-        let content = UNMutableNotificationContent()
-        content.title = "Rest complete"
-        content.body = "Time to start your next set."
-        content.sound = .default
-        if #available(iOS 15.0, *) {
-            content.interruptionLevel = .timeSensitive
-        }
-
-        let triggerDate = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-        let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDate, repeats: false)
-
-        let request = UNNotificationRequest(identifier: "exercise.rest.complete", content: content, trigger: trigger)
-        center.add(request) { error in
-            if let error = error {
-                print("Failed to schedule rest notification: \(error)")
-            }
-        }
-    }
-
-    private func cancelRestCompletionNotification() {
-        let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: ["exercise.rest.complete"])
     }
 
     private func timeString(from seconds: Int) -> String {
