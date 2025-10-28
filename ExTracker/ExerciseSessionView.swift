@@ -11,7 +11,8 @@ struct ExerciseSessionView: View {
     @Environment(\.dismiss) private var dismiss
 
     let exercise: Exercise
-    @Query private var records: [ExerciseSessionRecord]
+    @State private var records: [ExerciseSessionRecord] = []
+    @State private var isLoadingRecords = true
 
     @State private var existingRecord: ExerciseSessionRecord? = nil
     @State private var isEditingExisting = false
@@ -35,11 +36,6 @@ struct ExerciseSessionView: View {
 
     init(exercise: Exercise) {
         self.exercise = exercise
-        let exerciseID = exercise.id
-        self._records = Query(
-            filter: #Predicate<ExerciseSessionRecord> { $0.exerciseID == exerciseID },
-            sort: [SortDescriptor(\.date, order: .reverse)]
-        )
     }
 
     var body: some View {
@@ -94,7 +90,12 @@ struct ExerciseSessionView: View {
                 }
             }
 
-            if let displayRecord = (isEditingExisting ? records.dropFirst().first : records.first) {
+            if isLoadingRecords {
+                SwiftUI.Section("Last session") {
+                    HStack { ProgressView(); Text("Loading…") }
+                        .foregroundStyle(.secondary)
+                }
+            } else if let displayRecord = (isEditingExisting ? records.dropFirst().first : records.first) {
                 SwiftUI.Section("Last session") {
                     HStack {
                         Image(systemName: "calendar")
@@ -118,7 +119,6 @@ struct ExerciseSessionView: View {
                     }
                     if let record = records.first {
                         Button {
-                            // Load the record into the current view for editing/continuation
                             existingRecord = record
                             self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
                                 SessionSet(weight: w, reps: r, timestamp: record.date)
@@ -217,6 +217,9 @@ struct ExerciseSessionView: View {
                 currentSessionLastSet: currentLast,
                 previousSessionFinalSet: previousFinal
             )
+        }
+        .task {
+            await loadLastRecords()
         }
     }
 
@@ -375,6 +378,29 @@ struct ExerciseSessionView: View {
         let m = seconds / 60
         let s = seconds % 60
         return String(format: "%d:%02d", m, s)
+    }
+
+    private func loadLastRecords() async {
+        isLoadingRecords = true
+        let exerciseID = exercise.id
+        do {
+            let descriptor = FetchDescriptor<ExerciseSessionRecord>(
+                predicate: #Predicate { $0.exerciseID == exerciseID },
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+            let fetched: [ExerciseSessionRecord] = try await Task.detached(priority: .userInitiated) {
+                return try modelContext.fetch(descriptor)
+            }.value
+            await MainActor.run {
+                self.records = fetched
+                self.isLoadingRecords = false
+            }
+        } catch {
+            await MainActor.run {
+                self.records = []
+                self.isLoadingRecords = false
+            }
+        }
     }
 }
 

@@ -8,9 +8,57 @@
 import SwiftUI
 import SwiftData
 
+private struct ExerciseRow: View {
+    let exercise: Exercise
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: exercise.category.systemImage)
+                .frame(width: 28, alignment: .trailing)
+                .foregroundStyle(exercise.category.displayColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(exercise.name)
+                    .font(.headline)
+                ExerciseSubtitle(exercise: exercise)
+            }
+            Spacer()
+            Text("\(exercise.daysLeft)")
+                .monospacedDigit()
+                .foregroundStyle(daysLeftColor)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(exercise.category.displayName), \(exercise.name), days left \(exercise.daysLeft)")
+    }
+
+    private var daysLeftColor: Color {
+        if exercise.daysLeft <= 0 { return .red }
+        if exercise.daysLeft == 1 { return .orange }
+        return .green
+    }
+}
+
+private struct ExerciseSubtitle: View {
+    let exercise: Exercise
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let last = exercise.lastPerformed {
+                Text(last, style: .date)
+            } else {
+                Text("N/A")
+            }
+            Text("•")
+            Text("Every \(exercise.frequency) day\(exercise.frequency == 1 ? "" : "s")")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: [SortDescriptor(\Exercise.createdAt, order: .forward)]) private var exerciseData: [Exercise]
+    @State private var exerciseData: [Exercise] = []
+    @State private var isLoadingExercises = true
     
     var exercises: [Exercise] {
         exerciseData.sorted { $0.daysLeft < $1.daysLeft }
@@ -29,148 +77,155 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(exercises) { exercise in
-                    NavigationLink {
-                        ExerciseSessionView(exercise: exercise)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: exercise.category.systemImage)
-                                .frame(width: 28, alignment: .trailing)
-                                .foregroundStyle(exercise.category.displayColor)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(exercise.name)
-                                    .font(.headline)
-                                HStack(spacing: 8) {
-                                    if let last = exercise.lastPerformed {
-                                        Text(last, style: .date)
-                                    } else {
-                                        Text("N/A")
-                                    }
-                                    Text("•")
-                                    Text("Every \(exercise.frequency) day\(exercise.frequency == 1 ? "" : "s")")
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
+            content
+                .navigationTitle("Exercises")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbar { mainToolbar }
+                .sheet(isPresented: $showingAddSheet) { addSheet }
+                .sheet(isPresented: $showingEditSheet) { editSheet }
+                .onAppear { Task { await loadExercises() } }
+        }
+    }
+    
+    @ViewBuilder
+    private var content: some View {
+        if isLoadingExercises {
+            loadingView
+        } else {
+            exercisesList
+        }
+    }
+    
+    private var loadingView: some View {
+        VStack(spacing: 12) {
+            ProgressView("Loading…")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private var exercisesList: some View {
+        List {
+            ForEach(exercises) { exercise in
+                NavigationLink {
+                    ExerciseSessionView(exercise: exercise)
+                } label: {
+                    ExerciseRow(exercise: exercise)
+                }
+                .swipeActions(edge: .trailing) {
+                    Button("Edit") { beginEdit(exercise) }
+                        .tint(.blue)
+                }
+            }
+            .onDelete(perform: deleteExercises)
+        }
+    }
+    
+    @ToolbarContentBuilder
+    private var mainToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) { EditButton() }
+        ToolbarItem { Button(action: { showingAddSheet = true }) { Label("Add Exercise", systemImage: "plus") } }
+    }
+    
+    private var addSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Details") {
+                    TextField("Exercise name", text: $draftName)
+                    Picker("Category", selection: $draftCategory) {
+                        ForEach(ExerciseCategory.allCases) { cat in
+                            Label(cat.displayName, systemImage: cat.systemImage)
+                                .tag(cat)
+                        }
+                    }
+                    Stepper(value: $frequency, in: 1...365) {
+                        HStack {
+                            Text("Frequency (days)")
                             Spacer()
-                            Text("\(exercise.daysLeft)")
-                                .monospacedDigit()
-                                .foregroundStyle(
-                                    exercise.daysLeft <= 0 ? .red :
-                                    (exercise.daysLeft == 1 ? .orange : .green)
-                                )
+                            Text("\(frequency)").monospacedDigit()
                         }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(exercise.category.displayName), \(exercise.name), days left \(exercise.daysLeft)")
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button("Edit") {
-                            beginEdit(exercise)
-                        }.tint(.blue)
                     }
                 }
-                .onDelete(perform: deleteExercises)
             }
+            .navigationTitle("New Exercise")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { resetAddDraftAndDismiss() }
                 }
-                ToolbarItem {
-                    Button(action: { showingAddSheet = true }) {
-                        Label("Add Exercise", systemImage: "plus")
-                    }
-                }
-            }
-            .sheet(isPresented: $showingAddSheet) {
-                NavigationStack {
-                    Form {
-                        Section("Details") {
-                            TextField("Exercise name", text: $draftName)
-                            Picker("Category", selection: $draftCategory) {
-                                ForEach(ExerciseCategory.allCases) { cat in
-                                    Label(cat.displayName, systemImage: cat.systemImage)
-                                        .tag(cat)
-                                }
-                            }
-                            Stepper(value: $frequency, in: 1...365) {
-                                HStack {
-                                    Text("Frequency (days)")
-                                    Spacer()
-                                    Text("\(frequency)").monospacedDigit()
-                                }
-                            }
-                        }
-                    }
-                    .navigationTitle("New Exercise")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                showingAddSheet = false
-                                draftName = ""
-                                frequency = 7
-                                draftCategory = .chest
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") {
-                                let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !trimmed.isEmpty else { return }
-                                withAnimation {
-                                    let new = Exercise(name: trimmed, frequency: frequency, category: draftCategory)
-                                    modelContext.insert(new)
-                                }
-                                showingAddSheet = false
-                                draftName = ""
-                                frequency = 7
-                                draftCategory = .chest
-                            }
-                            .disabled(draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { saveNewExercise() }
+                        .disabled(draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .sheet(isPresented: $showingEditSheet) {
-                Form {
-                    Section("Details") {
-                        TextField("Exercise name", text: $editName)
-                        Picker("Category", selection: $editCategory) {
-                            ForEach(ExerciseCategory.allCases) { cat in
-                                Label(cat.displayName, systemImage: cat.systemImage)
-                                    .tag(cat)
-                            }
-                        }
-                        Stepper(value: $editFrequency, in: 1...365) {
-                            HStack {
-                                Text("Frequency (days)")
-                                Spacer()
-                                Text("\(editFrequency)").monospacedDigit()
-                            }
+        }
+    }
+    
+    private var editSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Details") {
+                    TextField("Exercise name", text: $editName)
+                    Picker("Category", selection: $editCategory) {
+                        ForEach(ExerciseCategory.allCases) { cat in
+                            Label(cat.displayName, systemImage: cat.systemImage)
+                                .tag(cat)
                         }
                     }
+                    Stepper(value: $editFrequency, in: 1...365) {
+                        HStack {
+                            Text("Frequency (days)")
+                            Spacer()
+                            Text("\(editFrequency)").monospacedDigit()
+                        }
+                    }
+                }
 
-                    Section {
-                        Button(role: .destructive) {
-                            deleteEditedExercise()
-                        } label: {
-                            Text("Delete Exercise")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                }
-                .navigationTitle("Edit Exercise")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { cancelEdit() }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") { saveEdit() }
-                            .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Section {
+                    Button(role: .destructive) { deleteEditedExercise() } label: {
+                        Text("Delete Exercise")
+                            .frame(maxWidth: .infinity)
                     }
                 }
             }
-            .navigationTitle("Exercises")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle("Edit Exercise")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { cancelEdit() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { saveEdit() }
+                        .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+    
+    private func resetAddDraftAndDismiss() {
+        showingAddSheet = false
+        draftName = ""
+        frequency = 7
+        draftCategory = .chest
+    }
+
+    private func saveNewExercise() {
+        let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        withAnimation {
+            let new = Exercise(name: trimmed, frequency: frequency, category: draftCategory)
+            modelContext.insert(new)
+        }
+        resetAddDraftAndDismiss()
+    }
+    
+    private func loadExercises() async {
+        isLoadingExercises = true
+        let descriptor = FetchDescriptor<Exercise>(
+            sortBy: [SortDescriptor(\.createdAt, order: .forward)]
+        )
+        do {
+            let fetched = try modelContext.fetch(descriptor)
+            self.exerciseData = fetched
+            self.isLoadingExercises = false
+        } catch {
+            self.exerciseData = []
+            self.isLoadingExercises = false
         }
     }
 
