@@ -6,6 +6,7 @@ import UserNotifications
 import UIKit
 #endif
 
+
 struct ExerciseSessionView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -56,8 +57,9 @@ struct ExerciseSessionView: View {
                                 .frame(minWidth: 60, alignment: .trailing)
                         }
                         HStack(spacing: 16) {
-                            Button(isPaused ? "Resume" : "Pause") { togglePause() }
-                            Button("Cancel", role: .destructive) { cancelRest() }
+                            Button(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill", action:{})
+                                .onTapGesture { togglePause() }
+                            Button("Cancel", systemImage: "stop.fill", role: .destructive, action:{}).onTapGesture { cancelRest() }
                         }
                     }
                 }
@@ -340,6 +342,7 @@ struct ExerciseSessionView: View {
         isPaused.toggle()
         // When pausing, capture remainingSeconds; when resuming, recompute end date
         if isPaused {
+            ExAlarmManager.shared.togglePauseActiveAlarm(on: true)
             // Freeze remainingSeconds by stopping updates; timer closure respects isPaused
         } else {
             // Resuming: set a new end date from current remainingSeconds
@@ -348,6 +351,7 @@ struct ExerciseSessionView: View {
                 // Re-schedule the notification for the new end date
                 scheduleRestCompletionNotification(at: restEndDate!)
             }
+            ExAlarmManager.shared.togglePauseActiveAlarm(on: false)
         }
     }
 
@@ -359,6 +363,7 @@ struct ExerciseSessionView: View {
         totalSeconds = 0
         restEndDate = nil
         cancelRestCompletionNotification()
+        ExAlarmManager.shared.cancelActiveCountdown()
     }
 
     private func playCompletionFeedback() {

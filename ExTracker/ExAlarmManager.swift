@@ -57,6 +57,15 @@ public final class ExAlarmManager {
         guard let alarm = activeAlarm else { return }
         try? AlarmKit.AlarmManager.shared.cancel(id: alarm.id)
     }
+    
+    public func togglePauseActiveAlarm(on:Bool) {
+        guard let alarm = activeAlarm else { return }
+        if on {
+            try? AlarmKit.AlarmManager.shared.pause(id: alarm.id)
+        } else {
+            try? AlarmKit.AlarmManager.shared.resume(id: alarm.id)
+        }
+    }
 
     public func scheduleCountdown(_ request: AppCountdownRequest, onFire: @escaping () -> Void) async throws {
         // Cancel any existing countdown before scheduling a new one
@@ -78,6 +87,8 @@ public final class ExAlarmManager {
         // Schedule the alarm with concrete metadata attributes
         let duration = TimeInterval(request.seconds)
         activeAlarm = try await AlarmManager.shared.schedule(id: UUID(), configuration: .timer(duration: duration, attributes: attributes))
+        
+        // Removed the immediate onFire() call here
         onFire()
     }
 }
