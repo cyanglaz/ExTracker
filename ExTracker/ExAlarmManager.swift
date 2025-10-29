@@ -93,7 +93,7 @@ public final class ExAlarmManager: ObservableObject {
         
         let attributes = AlarmAttributes<EmptyAlarmMetadata>(
             presentation: AlarmPresentation(alert: alert),
-            tintColor: .black
+            tintColor: .white
         )
         
         // Schedule the alarm with concrete metadata attributes
