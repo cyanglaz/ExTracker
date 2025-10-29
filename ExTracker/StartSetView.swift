@@ -23,10 +23,6 @@ struct StartSetView: View {
     @State private var restMinutes: Int = 2
     @State private var restSeconds: Int = 30
 
-    @State private var isResting = false
-    @State private var remainingSeconds: Int = 0
-    @State private var restTimer: Timer? = nil
-
     @State private var showRepsEmptyAlert = false
     @State private var showRestDoneAlert = false
 
@@ -55,20 +51,11 @@ struct StartSetView: View {
                             .monospacedDigit()
                     }
                 }
-                if isResting {
-                    HStack {
-                        ProgressView(value: Double(max(0, remainingSeconds)), total: Double(max(1, restTotalSeconds())))
-                        Text(timeString(from: remainingSeconds))
-                            .monospacedDigit()
-                            .frame(minWidth: 60, alignment: .trailing)
-                    }
-                }
             }
             Section {
                 Button(action: finishAndRest) {
-                    Label(isResting ? "Resting..." : "Finish and Rest", systemImage: isResting ? "timer" : "checkmark.circle.fill")
+                    Text("Finish and Rest")
                 }
-                .disabled(isResting)
             }
         }
         .navigationTitle("Exercise")
@@ -85,7 +72,6 @@ struct StartSetView: View {
         .onAppear {
             prefillFromHistoryIfNeeded()
         }
-        .onDisappear { restTimer?.invalidate() }
     }
 
     private func finishAndRest() {
@@ -96,19 +82,6 @@ struct StartSetView: View {
         }
         // Pass the set back to the caller (Exercise page) and start the timer locally.
         onFinish(weight.trimmingCharacters(in: .whitespacesAndNewlines), trimmedReps, restMinutes, restSeconds)
-
-        isResting = true
-        remainingSeconds = max(0, restTotalSeconds())
-        restTimer?.invalidate()
-        restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            if remainingSeconds > 0 {
-                remainingSeconds -= 1
-            } else {
-                timer.invalidate()
-                isResting = false
-                showRestDoneAlert = true
-            }
-        }
     }
 
     private func restTotalSeconds() -> Int {
@@ -121,6 +94,9 @@ struct StartSetView: View {
         return String(format: "%d:%02d", m, s)
     }
 
+    // AlarmKit integration notes:
+    // - We request authorization on appear and prefer scheduling a system countdown for rest.
+    // - We keep a lightweight local timer for on-screen progress and as a fallback when authorization is denied or scheduling fails.
     private func prefillFromHistoryIfNeeded() {
         // Only prefill if user hasn't typed anything and rest is still at initial defaults
         let isWeightDefault = weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

@@ -27,6 +27,10 @@ struct ExTrackerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .task { @MainActor in
+                    let status = await ExAlarmManager.shared.requestAuthorizationIfNeeded()
+                    // status is also stored in AlarmManager.shared.authorizationStatus
+                }
         }
         .modelContainer(sharedModelContainer)
     }
