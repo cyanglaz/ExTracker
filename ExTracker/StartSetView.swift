@@ -20,7 +20,7 @@ struct StartSetView: View {
     @State private var weight: String = ""
     @State private var reps: String = ""
     @State private var restMinutes: Int = 2
-    @State private var restSeconds: Int = 0
+    @State private var restSeconds: Int = 30
 
     @State private var isResting = false
     @State private var remainingSeconds: Int = 0
