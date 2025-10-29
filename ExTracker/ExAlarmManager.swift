@@ -53,19 +53,19 @@ public final class ExAlarmManager {
         return authorizationStatus
     }
 
-    public func cancelActiveCountdown() async {
+    public func cancelActiveCountdown() {
         guard let alarm = activeAlarm else { return }
         try? AlarmKit.AlarmManager.shared.cancel(id: alarm.id)
     }
 
     public func scheduleCountdown(_ request: AppCountdownRequest, onFire: @escaping () -> Void) async throws {
         // Cancel any existing countdown before scheduling a new one
-        await cancelActiveCountdown()
+        cancelActiveCountdown()
         let alert = AlarmPresentation.Alert(
             title: LocalizedStringResource(stringLiteral: request.title),
             stopButton: AlarmButton(
                 text: "Stop",
-                textColor: .black,
+                textColor: .white,
                 systemImageName: "stop.fill"
             )
         )

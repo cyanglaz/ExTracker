@@ -216,7 +216,8 @@ struct ExerciseSessionView: View {
                     sessionSets.append(set)
                     // Dismiss the sheet back to Exercise page
                     showingStartSet = false
-                    startRestTimer(totalSeconds: max(0, min * 60 + sec))
+                    let total = max(0, min * 60 + sec)
+                    Task { await startRestTimer(totalSeconds: total) }
                 },
                 currentSessionLastSet: currentLast,
                 previousSessionFinalSet: previousFinal
@@ -287,7 +288,7 @@ struct ExerciseSessionView: View {
         return max(0, comps.day ?? 0)
     }
 
-    private func startRestTimer(totalSeconds: Int) {
+    private func startRestTimer(totalSeconds: Int) async {
         guard totalSeconds > 0 else { return }
         self.totalSeconds = totalSeconds
         self.restEndDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
@@ -295,9 +296,16 @@ struct ExerciseSessionView: View {
         self.isResting = true
         self.isPaused = false
 
-        // Schedule local notification for when the timer ends
-        scheduleRestCompletionNotification(at: self.restEndDate!)
-
+        startTimer(totalSeconds: totalSeconds)
+        
+        if (ExAlarmManager.shared.authorizationStatus == .denied) {
+            scheduleNotification(totalSeconds: totalSeconds)
+        } else {
+           await scheduleAlarm(totalSeconds: totalSeconds)
+        }
+    }
+    
+    private func startTimer(totalSeconds: Int) {
         // Invalidate any existing timer and start a new UI timer
         restTimer?.invalidate()
         restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
@@ -310,6 +318,20 @@ struct ExerciseSessionView: View {
                 restEndDate = nil
                 playCompletionFeedback()
             }
+        }
+    }
+    
+    private func scheduleNotification(totalSeconds: Int) {
+        // Schedule local notification for when the timer ends
+        scheduleRestCompletionNotification(at: self.restEndDate!)
+    }
+    
+    private func scheduleAlarm(totalSeconds: Int) async {
+        let alarmCooldownRequest = AppCountdownRequest(seconds: totalSeconds, title: "Rest Complete", message: "")
+        do {
+            try await ExAlarmManager.shared.scheduleCountdown(alarmCooldownRequest, onFire: {})
+        } catch {
+            scheduleNotification(totalSeconds: totalSeconds)
         }
     }
 
