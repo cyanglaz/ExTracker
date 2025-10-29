@@ -11,9 +11,10 @@ import SwiftData
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\Exercise.createdAt, order: .forward)]) private var exerciseData: [Exercise]
+    @Query(sort: [SortDescriptor(\ExerciseSessionRecord.date, order: .reverse)]) private var sessionRecords: [ExerciseSessionRecord]
     
     var exercises: [Exercise] {
-        exerciseData.sorted { $0.daysLeft < $1.daysLeft }
+        exerciseData.sorted { getDaysLeft(for: $0) < getDaysLeft(for: $1) }
     }
     
     @State private var showingAddSheet = false
@@ -30,7 +31,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(exercises) { exercise in
+                ForEach(exercises, id: \.id) { exercise in
                     NavigationLink {
                         ExerciseSessionView(exercise: exercise)
                     } label: {
@@ -42,7 +43,7 @@ struct ContentView: View {
                                 Text(exercise.name)
                                     .font(.headline)
                                 HStack(spacing: 8) {
-                                    if let last = exercise.lastPerformed {
+                                    if let last = latestRecord(for: exercise)?.date {
                                         Text(last, style: .date)
                                     } else {
                                         Text("N/A")
@@ -54,15 +55,15 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text("\(exercise.daysLeft)")
+                            Text("\(getDaysLeft(for: exercise))")
                                 .monospacedDigit()
                                 .foregroundStyle(
-                                    exercise.daysLeft <= 0 ? .red :
-                                    (exercise.daysLeft == 1 ? .orange : .green)
+                                    getDaysLeft(for: exercise) <= 0 ? .red :
+                                    (getDaysLeft(for: exercise) == 1 ? .orange : .green)
                                 )
                         }
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(exercise.category.displayName), \(exercise.name), days left \(exercise.daysLeft)")
+                        .accessibilityLabel("\(exercise.category.displayName), \(exercise.name), days left \(getDaysLeft(for: exercise))")
                     }
                     .swipeActions(edge: .trailing) {
                         Button("Edit") {
@@ -180,7 +181,7 @@ struct ContentView: View {
     private func deleteExercises(offsets: IndexSet) {
         withAnimation {
             for index in offsets {
-                modelContext.delete(exercises[index])
+                modelContext.delete(self.exercises[index])
             }
         }
     }
@@ -220,9 +221,30 @@ struct ContentView: View {
         }
         cancelEdit()
     }
+    
+    /// Returns all session records for the given exercise, sorted by date descending
+    private func sessionRecords(for exercise: Exercise) -> [ExerciseSessionRecord] {
+        sessionRecords.filter { $0.exerciseID == exercise.id }
+    }
+
+    /// Returns the most recent session record for the given exercise, if any
+    private func latestRecord(for exercise: Exercise) -> ExerciseSessionRecord? {
+        return sessionRecords(for: exercise).max { a, b in
+            a.date < b.date
+        }
+    }
+    
+    private func getDaysLeft(for exercise: Exercise) -> Int {
+        guard let last = latestRecord(for: exercise) else {
+            return 0
+        }
+        let diff = Calendar.current.dateComponents([.day], from: last.date, to: Date()).day ?? 0
+        return exercise.frequency - diff
+    }
 }
 
 #Preview {
     ContentView()
         .modelContainer(for: Exercise.self, inMemory: true)
 }
+
