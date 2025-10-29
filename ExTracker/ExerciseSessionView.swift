@@ -213,8 +213,8 @@ struct ExerciseSessionView: View {
 
             // Determine the final set from the previous session, if any
             let previousFinal: StartSetView.PreviousSet? = {
-                let weights = exercise.lastSessionWeights
-                let reps = exercise.lastSessionReps
+                let weights = exercise.latestSessionWeights
+                let reps = exercise.latestSessionReps
             
                 let lastWeight = (weights.last != nil) ? weights.last! : "";
                 let lastRep = (reps.last != nil) ? reps.last! : "";
@@ -247,28 +247,22 @@ struct ExerciseSessionView: View {
     private func saveSessionIfNeeded() {
         guard !sessionSets.isEmpty else { return }
 
-        // Save last performed date
-        exercise.lastPerformed = Date()
-
         if let record = existingRecord {
             // Update existing record in place
-            record.date = exercise.lastPerformed ?? Date()
+            record.date = exercise.latestPerformedDate ?? Date()
             record.weights = sessionSets.map { $0.weight }
             record.reps = sessionSets.map { $0.reps }
         } else {
             // Create a new record
             let record = ExerciseSessionRecord(
                 exerciseID: exercise.id,
-                date: exercise.lastPerformed ?? Date(),
+                date: exercise.latestPerformedDate ?? Date(),
                 weights: sessionSets.map { $0.weight },
                 reps: sessionSets.map { $0.reps }
             )
             modelContext.insert(record)
         }
 
-        // Copy current session sets into exercise's last session storage
-        exercise.lastSessionWeights = sessionSets.map { $0.weight }
-        exercise.lastSessionReps = sessionSets.map { $0.reps }
         // Reset daysLeft to at least 1 (acts as max frequency placeholder)
         exercise.frequency = max(exercise.frequency, 1)
     }

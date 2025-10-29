@@ -42,7 +42,7 @@ struct ContentView: View {
                                 Text(exercise.name)
                                     .font(.headline)
                                 HStack(spacing: 8) {
-                                    if let last = exercise.lastPerformed {
+                                    if let last = exercise.latestPerformedDate {
                                         Text(last, style: .date)
                                     } else {
                                         Text("N/A")

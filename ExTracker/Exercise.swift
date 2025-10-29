@@ -39,30 +39,44 @@ final class Exercise {
     var category: ExerciseCategory
     var frequency: Int
     var createdAt: Date
-    var lastPerformed: Date?
-    var lastSessionWeights: [String] = []
-    var lastSessionReps: [String] = []
-    
+
     @Transient
     var daysLeft: Int {
         get {
-            if lastPerformed  == nil {
-                return 0
-            }
-            let diffTodayFromLastPerformed = Calendar.current.dateComponents([.day], from: lastPerformed ?? createdAt, to: Date()).day ?? 0
-            return frequency - diffTodayFromLastPerformed
+            guard let latestPerformedDate else { return 0 }
+            let diff = Calendar.current.dateComponents([.day], from: latestPerformedDate, to: Date()).day ?? 0
+            return frequency - diff
         }
     }
+
+    @Transient
+    var latestPerformedDate: Date? {
+        // Fetch on demand from ExerciseSessionModel
+        var records: [ExerciseSessionRecord] = Query(
+            filter: #Predicate<ExerciseSessionRecord> { $0.exerciseID == exerciseID },
+            sort: [SortDescriptor(\.date, order: .reverse)]
+        )
+    }
+
+    @Transient
+    var latestSessionWeights: [String] {
+        // Fetch on demand from ExerciseSessionModel
+        ExerciseSessionModel.latestSession(forExerciseID: id)?.weights ?? []
+    }
+
+    @Transient
+    var latestSessionReps: [String] {
+        // Fetch on demand from ExerciseSessionModel
+        ExerciseSessionModel.latestSession(forExerciseID: id)?.reps ?? []
+    }
     
-    init(id: UUID = UUID(), name: String, frequency:Int, category: ExerciseCategory = .chest, createdAt: Date = Date(), lastPerformed: Date? = nil, lastSessionWeights: [String] = [], lastSessionReps: [String] = []) {
+    init(id: UUID = UUID(), name: String, frequency: Int, category: ExerciseCategory = .chest, createdAt: Date = Date()) {
         self.id = id
         self.name = name
         self.frequency = frequency
         self.category = category
         self.createdAt = createdAt
-        self.lastPerformed = lastPerformed
-        self.lastSessionWeights = lastSessionWeights
-        self.lastSessionReps = lastSessionReps
     }
     
 }
+
