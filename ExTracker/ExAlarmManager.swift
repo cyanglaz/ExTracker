@@ -24,12 +24,17 @@ public struct AppCountdownRequest {
 }
 
 @MainActor
-public final class ExAlarmManager {
+public final class ExAlarmManager: ObservableObject {
     public static let shared = ExAlarmManager()
     private var activeAlarm:Alarm?
     private init() {}
 
     @Published public private(set) var authorizationStatus: AppAlarmAuthorizationStatus = .notDetermined
+    @Published public private(set) var isRinging: Bool = false
+
+    public func markAlarmFired() {
+        isRinging = true
+    }
 
     public func requestAuthorizationIfNeeded() async -> AppAlarmAuthorizationStatus {
         do {
@@ -54,8 +59,10 @@ public final class ExAlarmManager {
     }
 
     public func cancelActiveCountdown() {
+        isRinging = false
         guard let alarm = activeAlarm else { return }
         try? AlarmKit.AlarmManager.shared.cancel(id: alarm.id)
+        activeAlarm = nil
     }
     
     public func togglePauseActiveAlarm(on:Bool) {
@@ -67,7 +74,7 @@ public final class ExAlarmManager {
         }
     }
 
-    public func scheduleCountdown(_ request: AppCountdownRequest, onFire: @escaping () -> Void) async throws {
+    public func scheduleCountdown(_ request: AppCountdownRequest) async throws {
         // Cancel any existing countdown before scheduling a new one
         cancelActiveCountdown()
         let alert = AlarmPresentation.Alert(
@@ -87,8 +94,5 @@ public final class ExAlarmManager {
         // Schedule the alarm with concrete metadata attributes
         let duration = TimeInterval(request.seconds)
         activeAlarm = try await AlarmManager.shared.schedule(id: UUID(), configuration: .timer(duration: duration, attributes: attributes))
-        
-        // Removed the immediate onFire() call here
-        onFire()
     }
 }

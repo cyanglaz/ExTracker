@@ -10,6 +10,7 @@ import UIKit
 struct ExerciseSessionView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var alarmManager = ExAlarmManager.shared
 
     let exercise: Exercise
     @Query private var records: [ExerciseSessionRecord]
@@ -47,6 +48,22 @@ struct ExerciseSessionView: View {
 
     var body: some View {
         SwiftUI.Form {
+            if alarmManager.isRinging {
+                SwiftUI.Section {
+                    Button(role: .destructive) {
+                        alarmManager.cancelActiveCountdown()
+                        // Also make sure local rest state is cleared
+                        cancelRest()
+                    } label: {
+                        Label("Stop Alarm", systemImage: "stop.circle.fill")
+                            .font(.headline)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .accessibilityLabel("Stop Alarm")
+                }
+            }
+
             if isResting {
                 SwiftUI.Section("Rest timer") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -297,10 +314,11 @@ struct ExerciseSessionView: View {
         self.remainingSeconds = totalSeconds
         self.isResting = true
         self.isPaused = false
+        let authorizationStatus = await ExAlarmManager.shared.requestAuthorizationIfNeeded()
 
         startTimer(totalSeconds: totalSeconds)
         
-        if (ExAlarmManager.shared.authorizationStatus == .denied) {
+        if (authorizationStatus == .denied) {
             scheduleNotification(totalSeconds: totalSeconds)
         } else {
            await scheduleAlarm(totalSeconds: totalSeconds)
@@ -318,6 +336,9 @@ struct ExerciseSessionView: View {
                 timer.invalidate()
                 isResting = false
                 restEndDate = nil
+                Task { @MainActor in
+                    ExAlarmManager.shared.markAlarmFired()
+                }
                 playCompletionFeedback()
             }
         }
@@ -331,7 +352,7 @@ struct ExerciseSessionView: View {
     private func scheduleAlarm(totalSeconds: Int) async {
         let alarmCooldownRequest = AppCountdownRequest(seconds: totalSeconds, title: "Rest Complete", message: "")
         do {
-            try await ExAlarmManager.shared.scheduleCountdown(alarmCooldownRequest, onFire: {})
+            try await ExAlarmManager.shared.scheduleCountdown(alarmCooldownRequest)
         } catch {
             scheduleNotification(totalSeconds: totalSeconds)
         }
