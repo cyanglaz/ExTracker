@@ -108,14 +108,12 @@ struct ExerciseSessionView: View {
                     let count = max(displayRecord.reps.count, displayRecord.weights.count)
                     ForEach(0..<count, id: \.self) { idx in
                         HStack(spacing: 12) {
-                            let w = idx < displayRecord.weights.count ? displayRecord.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : ""
-                            if !w.isEmpty {
-                                Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
-                            }
+                            let w = idx < displayRecord.weights.count ? displayRecord.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : "0"
+                            Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
                             Spacer()
                             Text("x \(idx < displayRecord.reps.count ? displayRecord.reps[idx] : "-")")
                                 .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle( .secondary)
                         }
                     }
                     if let record = records.first {
@@ -188,6 +186,7 @@ struct ExerciseSessionView: View {
                 guard let last = sessionSets.last else { return nil }
                 return StartSetView.PreviousSet(
                     weight: last.weight,
+                    reps: last.reps,
                     restMinutes: last.restMinutes, // default or last used; no per-set rest stored in sessionSets
                     restSeconds: last.restSeconds
                 )
@@ -197,12 +196,13 @@ struct ExerciseSessionView: View {
             let previousFinal: StartSetView.PreviousSet? = {
                 let weights = exercise.lastSessionWeights
                 let reps = exercise.lastSessionReps
-                let count = max(weights.count, reps.count)
-                guard count > 0 else { return nil }
-                let lastWeight = (count - 1) < weights.count ? weights[count - 1] : ""
+            
+                let lastWeight = (weights.last != nil) ? weights.last! : "";
+                let lastRep = (reps.last != nil) ? reps.last! : "";
                 // If you later store rest per set, use it here. For now, fall back to a sensible default.
                 return StartSetView.PreviousSet(
                     weight: lastWeight,
+                    reps: lastRep,
                     restMinutes: 2,
                     restSeconds: 30
                 )

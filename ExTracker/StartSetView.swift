@@ -3,6 +3,7 @@ import SwiftUI
 struct StartSetView: View {
     struct PreviousSet {
         var weight: String
+        var reps: String
         var restMinutes: Int
         var restSeconds: Int
     }
@@ -123,6 +124,7 @@ struct StartSetView: View {
     private func prefillFromHistoryIfNeeded() {
         // Only prefill if user hasn't typed anything and rest is still at initial defaults
         let isWeightDefault = weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let isRepsDefault = reps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isRestDefault = (restMinutes == 2 && restSeconds == 0)
         guard isWeightDefault || isRestDefault else { return }
 
@@ -131,6 +133,9 @@ struct StartSetView: View {
 
         if isWeightDefault {
             weight = source.weight
+        }
+        if isRepsDefault {
+            reps = source.reps
         }
         if isRestDefault {
             restMinutes = max(0, source.restMinutes)
@@ -143,7 +148,7 @@ struct StartSetView: View {
     StartSetView(
         exerciseName: "Bench Press",
         onFinish: { _,_,_,_ in },
-        currentSessionLastSet: StartSetView.PreviousSet(weight: "135 lb", restMinutes: 2, restSeconds: 0),
-        previousSessionFinalSet: StartSetView.PreviousSet(weight: "130 lb", restMinutes: 2, restSeconds: 30)
+        currentSessionLastSet: StartSetView.PreviousSet(weight: "135 lb", reps:"8", restMinutes: 2, restSeconds: 0),
+        previousSessionFinalSet: StartSetView.PreviousSet(weight: "130 lb", reps:"8", restMinutes: 2, restSeconds: 30)
     )
 }
