@@ -10,7 +10,7 @@ import UIKit
 struct ExerciseSessionView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var alarmManager = ExAlarmManager.shared
+    @StateObject private var alarmManager = ExAlarmManager.shared
 
     let exercise: Exercise
     @Query private var records: [ExerciseSessionRecord]
@@ -48,7 +48,7 @@ struct ExerciseSessionView: View {
 
     var body: some View {
         SwiftUI.Form {
-            if alarmManager.isRinging {
+            if alarmManager.isAlerting {
                 SwiftUI.Section {
                     Button(role: .destructive) {
                         alarmManager.cancelActiveCountdown()
@@ -336,9 +336,6 @@ struct ExerciseSessionView: View {
                 timer.invalidate()
                 isResting = false
                 restEndDate = nil
-                Task { @MainActor in
-                    ExAlarmManager.shared.markAlarmFired()
-                }
                 playCompletionFeedback()
             }
         }

@@ -26,14 +26,19 @@ public struct AppCountdownRequest {
 @MainActor
 public final class ExAlarmManager: ObservableObject {
     public static let shared = ExAlarmManager()
-    private var activeAlarm:Alarm?
-    private init() {}
+    public var activeAlarm:Alarm?
 
     @Published public private(set) var authorizationStatus: AppAlarmAuthorizationStatus = .notDetermined
-    @Published public private(set) var isRinging: Bool = false
-
-    public func markAlarmFired() {
-        isRinging = true
+    @Published public private(set) var isAlerting: Bool = false
+    
+    // A task to hold our observation loop
+    private var alarmObservationTask: Task<Void, Never>?
+    
+    private init() {
+        // Start observing alarm updates when the ViewModel is initialized
+        self.alarmObservationTask = Task {
+            await observeAlarms()
+        }
     }
 
     public func requestAuthorizationIfNeeded() async -> AppAlarmAuthorizationStatus {
@@ -59,7 +64,7 @@ public final class ExAlarmManager: ObservableObject {
     }
 
     public func cancelActiveCountdown() {
-        isRinging = false
+        isAlerting = false
         guard let alarm = activeAlarm else { return }
         try? AlarmKit.AlarmManager.shared.cancel(id: alarm.id)
         activeAlarm = nil
@@ -94,5 +99,24 @@ public final class ExAlarmManager: ObservableObject {
         // Schedule the alarm with concrete metadata attributes
         let duration = TimeInterval(request.seconds)
         activeAlarm = try await AlarmManager.shared.schedule(id: UUID(), configuration: .timer(duration: duration, attributes: attributes))
+    
+    }
+    
+    private func observeAlarms() async {
+        for await updatedAlarms in AlarmManager.shared.alarmUpdates {
+            await MainActor.run {
+                isAlerting = false
+                updatedAlarms.forEach { alarm in
+                    if alarm.state == Alarm.State.alerting {
+                        isAlerting = true
+                    }
+                }
+           }
+        }
+    }
+    
+    deinit {
+        alarmObservationTask?.cancel()
     }
 }
+
