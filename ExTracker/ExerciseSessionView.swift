@@ -37,7 +37,7 @@ struct ExerciseSessionView: View {
         let restSeconds: Int
     }
 
-    init(exercise: Exercise) {
+    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil) {
         self.exercise = exercise
         let exerciseID = exercise.id
         self._records = Query(
@@ -213,8 +213,14 @@ struct ExerciseSessionView: View {
 
             // Determine the final set from the previous session, if any
             let previousFinal: StartSetView.PreviousSet? = {
-                let weights = exercise.latestSessionWeights
-                let reps = exercise.latestSessionReps
+                var latestSessionWeights:[String] = []
+                var latestSessionReps:[String] = []
+                if let latestRecord = getLatestRecord(){
+                    latestSessionWeights = latestRecord.weights
+                    latestSessionReps = latestRecord.reps
+                }
+                let weights = latestSessionWeights
+                let reps = latestSessionReps
             
                 let lastWeight = (weights.last != nil) ? weights.last! : "";
                 let lastRep = (reps.last != nil) ? reps.last! : "";
@@ -248,15 +254,12 @@ struct ExerciseSessionView: View {
         guard !sessionSets.isEmpty else { return }
 
         if let record = existingRecord {
-            // Update existing record in place
-            record.date = exercise.latestPerformedDate ?? Date()
-            record.weights = sessionSets.map { $0.weight }
-            record.reps = sessionSets.map { $0.reps }
+        
         } else {
             // Create a new record
             let record = ExerciseSessionRecord(
                 exerciseID: exercise.id,
-                date: exercise.latestPerformedDate ?? Date(),
+                date: Date(),
                 weights: sessionSets.map { $0.weight },
                 reps: sessionSets.map { $0.reps }
             )
@@ -418,6 +421,13 @@ struct ExerciseSessionView: View {
         let m = seconds / 60
         let s = seconds % 60
         return String(format: "%d:%02d", m, s)
+    }
+    
+    private func getLatestRecord() -> ExerciseSessionRecord? {
+        if records.isEmpty { return nil }
+        return records.max { a, b in
+            a.date < b.date
+        }
     }
 }
 
