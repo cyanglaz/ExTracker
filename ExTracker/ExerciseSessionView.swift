@@ -6,9 +6,11 @@ import UserNotifications
 import UIKit
 #endif
 
+
 struct ExerciseSessionView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var alarmManager = ExAlarmManager.shared
 
     let exercise: Exercise
     @Query private var records: [ExerciseSessionRecord]
@@ -31,6 +33,8 @@ struct ExerciseSessionView: View {
         let weight: String
         let reps: String
         let timestamp: Date
+        let restMinutes: Int
+        let restSeconds: Int
     }
 
     init(exercise: Exercise) {
@@ -44,6 +48,22 @@ struct ExerciseSessionView: View {
 
     var body: some View {
         SwiftUI.Form {
+            if alarmManager.isAlerting {
+                SwiftUI.Section {
+                    Button(role: .destructive) {
+                        alarmManager.cancelActiveCountdown()
+                        // Also make sure local rest state is cleared
+                        cancelRest()
+                    } label: {
+                        Label("Stop Alarm", systemImage: "stop.circle.fill")
+                            .font(.headline)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .accessibilityLabel("Stop Alarm")
+                }
+            }
+
             if isResting {
                 SwiftUI.Section("Rest timer") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -54,8 +74,9 @@ struct ExerciseSessionView: View {
                                 .frame(minWidth: 60, alignment: .trailing)
                         }
                         HStack(spacing: 16) {
-                            Button(isPaused ? "Resume" : "Pause") { togglePause() }
-                            Button("Cancel", role: .destructive) { cancelRest() }
+                            Button(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill", action:{})
+                                .onTapGesture { togglePause() }
+                            Button("Cancel", systemImage: "stop.fill", role: .destructive, action:{}).onTapGesture { cancelRest() }
                         }
                     }
                 }
@@ -106,14 +127,12 @@ struct ExerciseSessionView: View {
                     let count = max(displayRecord.reps.count, displayRecord.weights.count)
                     ForEach(0..<count, id: \.self) { idx in
                         HStack(spacing: 12) {
-                            let w = idx < displayRecord.weights.count ? displayRecord.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : ""
-                            if !w.isEmpty {
-                                Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
-                            }
+                            let w = idx < displayRecord.weights.count ? displayRecord.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : "0"
+                            Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
                             Spacer()
                             Text("x \(idx < displayRecord.reps.count ? displayRecord.reps[idx] : "-")")
                                 .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle( .secondary)
                         }
                     }
                     if let record = records.first {
@@ -121,7 +140,7 @@ struct ExerciseSessionView: View {
                             // Load the record into the current view for editing/continuation
                             existingRecord = record
                             self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
-                                SessionSet(weight: w, reps: r, timestamp: record.date)
+                                SessionSet(weight: w, reps: r, timestamp: record.date, restMinutes: 0, restSeconds: 0)
                             }
                             self.isEditingExisting = true
                         } label: {
@@ -186,8 +205,9 @@ struct ExerciseSessionView: View {
                 guard let last = sessionSets.last else { return nil }
                 return StartSetView.PreviousSet(
                     weight: last.weight,
-                    restMinutes: 2, // default or last used; no per-set rest stored in sessionSets
-                    restSeconds: 0
+                    reps: last.reps,
+                    restMinutes: last.restMinutes, // default or last used; no per-set rest stored in sessionSets
+                    restSeconds: last.restSeconds
                 )
             }()
 
@@ -195,14 +215,15 @@ struct ExerciseSessionView: View {
             let previousFinal: StartSetView.PreviousSet? = {
                 let weights = exercise.lastSessionWeights
                 let reps = exercise.lastSessionReps
-                let count = max(weights.count, reps.count)
-                guard count > 0 else { return nil }
-                let lastWeight = (count - 1) < weights.count ? weights[count - 1] : ""
+            
+                let lastWeight = (weights.last != nil) ? weights.last! : "";
+                let lastRep = (reps.last != nil) ? reps.last! : "";
                 // If you later store rest per set, use it here. For now, fall back to a sensible default.
                 return StartSetView.PreviousSet(
                     weight: lastWeight,
+                    reps: lastRep,
                     restMinutes: 2,
-                    restSeconds: 0
+                    restSeconds: 30
                 )
             }()
 
@@ -210,11 +231,12 @@ struct ExerciseSessionView: View {
                 exerciseName: exercise.name,
                 onFinish: { weight, reps, min, sec in
                     // Append the set to the session list
-                    let set = SessionSet(weight: weight, reps: reps, timestamp: Date())
+                    let set = SessionSet(weight: weight, reps: reps, timestamp: Date(), restMinutes: min, restSeconds: sec)
                     sessionSets.append(set)
                     // Dismiss the sheet back to Exercise page
                     showingStartSet = false
-                    startRestTimer(totalSeconds: max(0, min * 60 + sec))
+                    let total = max(0, min * 60 + sec)
+                    Task { await startRestTimer(totalSeconds: total) }
                 },
                 currentSessionLastSet: currentLast,
                 previousSessionFinalSet: previousFinal
@@ -285,17 +307,25 @@ struct ExerciseSessionView: View {
         return max(0, comps.day ?? 0)
     }
 
-    private func startRestTimer(totalSeconds: Int) {
+    private func startRestTimer(totalSeconds: Int) async {
         guard totalSeconds > 0 else { return }
         self.totalSeconds = totalSeconds
         self.restEndDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
         self.remainingSeconds = totalSeconds
         self.isResting = true
         self.isPaused = false
+        let authorizationStatus = await ExAlarmManager.shared.requestAuthorizationIfNeeded()
 
-        // Schedule local notification for when the timer ends
-        scheduleRestCompletionNotification(at: self.restEndDate!)
-
+        startTimer(totalSeconds: totalSeconds)
+        
+        if (authorizationStatus == .denied) {
+            scheduleNotification(totalSeconds: totalSeconds)
+        } else {
+           await scheduleAlarm(totalSeconds: totalSeconds)
+        }
+    }
+    
+    private func startTimer(totalSeconds: Int) {
         // Invalidate any existing timer and start a new UI timer
         restTimer?.invalidate()
         restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
@@ -310,12 +340,27 @@ struct ExerciseSessionView: View {
             }
         }
     }
+    
+    private func scheduleNotification(totalSeconds: Int) {
+        // Schedule local notification for when the timer ends
+        scheduleRestCompletionNotification(at: self.restEndDate!)
+    }
+    
+    private func scheduleAlarm(totalSeconds: Int) async {
+        let alarmCooldownRequest = AppCountdownRequest(seconds: totalSeconds, title: "Rest Complete", message: "")
+        do {
+            try await ExAlarmManager.shared.scheduleCountdown(alarmCooldownRequest)
+        } catch {
+            scheduleNotification(totalSeconds: totalSeconds)
+        }
+    }
 
     private func togglePause() {
         guard isResting else { return }
         isPaused.toggle()
         // When pausing, capture remainingSeconds; when resuming, recompute end date
         if isPaused {
+            ExAlarmManager.shared.togglePauseActiveAlarm(on: true)
             // Freeze remainingSeconds by stopping updates; timer closure respects isPaused
         } else {
             // Resuming: set a new end date from current remainingSeconds
@@ -324,6 +369,7 @@ struct ExerciseSessionView: View {
                 // Re-schedule the notification for the new end date
                 scheduleRestCompletionNotification(at: restEndDate!)
             }
+            ExAlarmManager.shared.togglePauseActiveAlarm(on: false)
         }
     }
 
@@ -335,6 +381,7 @@ struct ExerciseSessionView: View {
         totalSeconds = 0
         restEndDate = nil
         cancelRestCompletionNotification()
+        ExAlarmManager.shared.cancelActiveCountdown()
     }
 
     private func playCompletionFeedback() {

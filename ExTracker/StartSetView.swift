@@ -3,6 +3,7 @@ import SwiftUI
 struct StartSetView: View {
     struct PreviousSet {
         var weight: String
+        var reps: String
         var restMinutes: Int
         var restSeconds: Int
     }
@@ -20,11 +21,7 @@ struct StartSetView: View {
     @State private var weight: String = ""
     @State private var reps: String = ""
     @State private var restMinutes: Int = 2
-    @State private var restSeconds: Int = 0
-
-    @State private var isResting = false
-    @State private var remainingSeconds: Int = 0
-    @State private var restTimer: Timer? = nil
+    @State private var restSeconds: Int = 30
 
     @State private var showRepsEmptyAlert = false
     @State private var showRestDoneAlert = false
@@ -54,20 +51,11 @@ struct StartSetView: View {
                             .monospacedDigit()
                     }
                 }
-                if isResting {
-                    HStack {
-                        ProgressView(value: Double(max(0, remainingSeconds)), total: Double(max(1, restTotalSeconds())))
-                        Text(timeString(from: remainingSeconds))
-                            .monospacedDigit()
-                            .frame(minWidth: 60, alignment: .trailing)
-                    }
-                }
             }
             Section {
                 Button(action: finishAndRest) {
-                    Label(isResting ? "Resting..." : "Finish and Rest", systemImage: isResting ? "timer" : "checkmark.circle.fill")
+                    Text("Finish and Rest")
                 }
-                .disabled(isResting)
             }
         }
         .navigationTitle("Exercise")
@@ -84,7 +72,6 @@ struct StartSetView: View {
         .onAppear {
             prefillFromHistoryIfNeeded()
         }
-        .onDisappear { restTimer?.invalidate() }
     }
 
     private func finishAndRest() {
@@ -95,19 +82,6 @@ struct StartSetView: View {
         }
         // Pass the set back to the caller (Exercise page) and start the timer locally.
         onFinish(weight.trimmingCharacters(in: .whitespacesAndNewlines), trimmedReps, restMinutes, restSeconds)
-
-        isResting = true
-        remainingSeconds = max(0, restTotalSeconds())
-        restTimer?.invalidate()
-        restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            if remainingSeconds > 0 {
-                remainingSeconds -= 1
-            } else {
-                timer.invalidate()
-                isResting = false
-                showRestDoneAlert = true
-            }
-        }
     }
 
     private func restTotalSeconds() -> Int {
@@ -120,9 +94,13 @@ struct StartSetView: View {
         return String(format: "%d:%02d", m, s)
     }
 
+    // AlarmKit integration notes:
+    // - We request authorization on appear and prefer scheduling a system countdown for rest.
+    // - We keep a lightweight local timer for on-screen progress and as a fallback when authorization is denied or scheduling fails.
     private func prefillFromHistoryIfNeeded() {
         // Only prefill if user hasn't typed anything and rest is still at initial defaults
         let isWeightDefault = weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let isRepsDefault = reps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isRestDefault = (restMinutes == 2 && restSeconds == 0)
         guard isWeightDefault || isRestDefault else { return }
 
@@ -131,6 +109,9 @@ struct StartSetView: View {
 
         if isWeightDefault {
             weight = source.weight
+        }
+        if isRepsDefault {
+            reps = source.reps
         }
         if isRestDefault {
             restMinutes = max(0, source.restMinutes)
@@ -143,7 +124,7 @@ struct StartSetView: View {
     StartSetView(
         exerciseName: "Bench Press",
         onFinish: { _,_,_,_ in },
-        currentSessionLastSet: StartSetView.PreviousSet(weight: "135 lb", restMinutes: 2, restSeconds: 0),
-        previousSessionFinalSet: StartSetView.PreviousSet(weight: "130 lb", restMinutes: 2, restSeconds: 30)
+        currentSessionLastSet: StartSetView.PreviousSet(weight: "135 lb", reps:"8", restMinutes: 2, restSeconds: 0),
+        previousSessionFinalSet: StartSetView.PreviousSet(weight: "130 lb", reps:"8", restMinutes: 2, restSeconds: 30)
     )
 }
