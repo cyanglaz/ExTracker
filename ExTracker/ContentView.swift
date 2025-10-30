@@ -13,6 +13,15 @@ struct ContentView: View {
     @Query(sort: [SortDescriptor(\Exercise.createdAt, order: .forward)]) private var exerciseData: [Exercise]
     @Query(sort: [SortDescriptor(\ExerciseSessionRecord.date, order: .reverse)]) private var sessionRecords: [ExerciseSessionRecord]
     
+    private var startOfToday: Date { Calendar.current.startOfDay(for: Date()) }
+
+    private var latestTodayRecordAndExercise: (ExerciseSessionRecord, Exercise)? {
+        let todayRecords = sessionRecords.filter { Calendar.current.isDate($0.date, inSameDayAs: startOfToday) }
+            .sorted { $0.date > $1.date }
+        guard let record = todayRecords.first, let ex = exerciseData.first(where: { $0.id == record.exerciseID }) else { return nil }
+        return (record, ex)
+    }
+    
     var exercises: [Exercise] {
         exerciseData.sorted { getDaysLeft(for: $0) < getDaysLeft(for: $1) }
     }
@@ -27,6 +36,7 @@ struct ContentView: View {
     @State private var editName: String = ""
     @State private var editFrequency: Int = 7
     @State private var editCategory: ExerciseCategory = .chest
+
 
     var body: some View {
         NavigationStack {
@@ -74,6 +84,16 @@ struct ContentView: View {
                 .onDelete(perform: deleteExercises)
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if let (_, ex) = latestTodayRecordAndExercise {
+                        NavigationLink {
+                            ExerciseSessionView(exercise: ex)
+                        } label: {
+                            Label("Today", systemImage: "bolt.fill")
+                        }
+                        .accessibilityLabel("Resume today's session")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     EditButton()
                 }
@@ -238,7 +258,7 @@ struct ContentView: View {
         guard let last = latestRecord(for: exercise) else {
             return 0
         }
-        let diff = Calendar.current.dateComponents([.day], from: last.date, to: Date()).day ?? 0
+        let diff = Calendar.current.component(.day, from: Date()) - Calendar.current.component(.day, from: last.date)
         return exercise.frequency - diff
     }
 }
@@ -247,4 +267,3 @@ struct ContentView: View {
     ContentView()
         .modelContainer(for: Exercise.self, inMemory: true)
 }
-

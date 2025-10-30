@@ -111,11 +111,22 @@ struct ExerciseSessionView: View {
                     }
                     .onDelete { indexSet in
                         sessionSets.remove(atOffsets: indexSet)
+                        // Persist changes after deletion
+                        if sessionSets.isEmpty {
+                            // If no sets remain, delete today's record if it exists
+                            if let rec = todayRecord() {
+                                modelContext.delete(rec)
+                                existingRecord = nil
+                                isEditingExisting = false
+                            }
+                        } else {
+                            saveSessionIfNeeded()
+                        }
                     }
                 }
             }
 
-            if let displayRecord = (isEditingExisting ? records.dropFirst().first : records.first) {
+            if let displayRecord = latestNonTodayRecord() {
                 SwiftUI.Section("Last session") {
                     HStack {
                         Image(systemName: "calendar")
@@ -135,16 +146,15 @@ struct ExerciseSessionView: View {
                                 .foregroundStyle( .secondary)
                         }
                     }
-                    if let record = records.first {
+                    if let today = todayRecord() ?? records.first {
                         Button {
-                            // Load the record into the current view for editing/continuation
-                            existingRecord = record
-                            self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
-                                SessionSet(weight: w, reps: r, timestamp: record.date, restMinutes: 0, restSeconds: 0)
+                            existingRecord = todayRecord() ?? today
+                            self.sessionSets = zip(existingRecord?.weights ?? [], existingRecord?.reps ?? []).map { (w, r) in
+                                SessionSet(weight: w, reps: r, timestamp: Date(), restMinutes: 0, restSeconds: 0)
                             }
                             self.isEditingExisting = true
                         } label: {
-                            Label(isEditingExisting ? "Editing last session" : "Continue last session", systemImage: isEditingExisting ? "pencil" : "play.circle")
+                            Label(todayRecord() != nil ? "Editing today's session" : "Continue last session", systemImage: todayRecord() != nil ? "pencil" : "play.circle")
                         }
                     }
                 }
@@ -179,15 +189,6 @@ struct ExerciseSessionView: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Start Set")
-            }
-            ToolbarItem(placement: .bottomBar) {
-                if isEditingExisting {
-                    Button(role: .destructive) {
-                        deleteEntireSession()
-                    } label: {
-                        Label("Delete Session", systemImage: "trash")
-                    }
-                }
             }
         })
         .safeAreaInset(edge: .bottom) {
@@ -239,6 +240,8 @@ struct ExerciseSessionView: View {
                     // Append the set to the session list
                     let set = SessionSet(weight: weight, reps: reps, timestamp: Date(), restMinutes: min, restSeconds: sec)
                     sessionSets.append(set)
+                    // Persist immediately after adding a set
+                    saveSessionIfNeeded()
                     // Dismiss the sheet back to Exercise page
                     showingStartSet = false
                     let total = max(0, min * 60 + sec)
@@ -248,25 +251,68 @@ struct ExerciseSessionView: View {
                 previousSessionFinalSet: previousFinal
             )
         }
+        .onAppear { preloadTodaySessionIfAny() }
+    }
+
+    private func startOfDay(_ date: Date) -> Date {
+        Calendar.current.startOfDay(for: date)
+    }
+
+    private func isSameDay(_ a: Date, _ b: Date) -> Bool {
+        Calendar.current.isDate(a, inSameDayAs: b)
+    }
+
+    private func todayRecord() -> ExerciseSessionRecord? {
+        let today = startOfDay(Date())
+        return records.first { isSameDay($0.date, today) }
+    }
+
+    private func latestNonTodayRecord() -> ExerciseSessionRecord? {
+        let today = startOfDay(Date())
+        return records
+            .filter { !isSameDay($0.date, today) }
+            .sorted { $0.date > $1.date }
+            .first
+    }
+
+    private func preloadTodaySessionIfAny() {
+        guard sessionSets.isEmpty else { return }
+        if let record = todayRecord() {
+            existingRecord = record
+            isEditingExisting = true
+            self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
+                SessionSet(weight: w, reps: r, timestamp: Date(), restMinutes: 0, restSeconds: 0)
+            }
+        }
     }
 
     private func saveSessionIfNeeded() {
-        guard !sessionSets.isEmpty else { return }
+        // If there are no sets, remove today's record if it exists
+        if sessionSets.isEmpty {
+            if let rec = todayRecord() {
+                modelContext.delete(rec)
+            }
+            existingRecord = nil
+            isEditingExisting = false
+            return
+        }
 
-        if let record = existingRecord {
-        
-        } else {
-            // Create a new record
-            let record = ExerciseSessionRecord(
+        var record = todayRecord()
+        if record == nil {
+            record = ExerciseSessionRecord(
                 exerciseID: exercise.id,
                 date: Date(),
                 weights: sessionSets.map { $0.weight },
                 reps: sessionSets.map { $0.reps }
             )
-            modelContext.insert(record)
+            if let newRecord = record { modelContext.insert(newRecord) }
+        } else {
+            record?.weights = sessionSets.map { $0.weight }
+            record?.reps = sessionSets.map { $0.reps }
         }
+        existingRecord = record
+        isEditingExisting = true
 
-        // Reset daysLeft to at least 1 (acts as max frequency placeholder)
         exercise.frequency = max(exercise.frequency, 1)
     }
     
@@ -286,14 +332,6 @@ struct ExerciseSessionView: View {
         // Stop any running timer
         cancelRest()
         // Dismiss back to main list
-        dismiss()
-    }
-    
-    private func deleteEntireSession() {
-        guard let record = existingRecord else { return }
-        modelContext.delete(record)
-        // If the deleted record was the last performed one, you might also clear exercise.lastSession* here.
-        sessionSets.removeAll()
         dismiss()
     }
     

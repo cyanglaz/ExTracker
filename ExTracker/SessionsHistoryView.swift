@@ -20,34 +20,37 @@ struct SessionsHistoryView: View {
                 Text("No previous sessions")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(records) { rec in
+                let dayGroups = groupedByDay(records)
+                ForEach(Array(dayGroups.enumerated()), id: \.offset) { _, group in
                     Section(header: HStack {
                         Image(systemName: "calendar")
-                        Text(rec.date, style: .date)
+                        Text(group.date, style: .date)
                         Spacer()
-                        Text("\(daysAgo(from: rec.date)) days ago")
+                        Text("\(daysAgo(from: group.date)) days ago")
                             .foregroundStyle(.secondary)
                     }) {
-                        let count = max(rec.reps.count, rec.weights.count)
-                        ForEach(0..<count, id: \.self) { idx in
-                            HStack(spacing: 12) {
-                                let w = idx < rec.weights.count ? rec.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : ""
-                                if !w.isEmpty {
-                                    Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
+                        ForEach(group.items) { rec in
+                            let count = max(rec.reps.count, rec.weights.count)
+                            ForEach(0..<count, id: \.self) { idx in
+                                HStack(spacing: 12) {
+                                    let w = idx < rec.weights.count ? rec.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                                    if !w.isEmpty {
+                                        Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
+                                    }
+                                    Spacer()
+                                    Text("x \(idx < rec.reps.count ? rec.reps[idx] : "-")")
+                                        .monospacedDigit()
+                                        .foregroundStyle(.secondary)
                                 }
-                                Spacer()
-                                Text("x \(idx < rec.reps.count ? rec.reps[idx] : "-")")
-                                    .monospacedDigit()
-                                    .foregroundStyle(.secondary)
                             }
-                        }
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            recordPendingDeletion = rec
-                            showDeleteAlert = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    recordPendingDeletion = rec
+                                    showDeleteAlert = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -71,6 +74,18 @@ struct SessionsHistoryView: View {
         let startOfThatDay = Calendar.current.startOfDay(for: date)
         let comps = Calendar.current.dateComponents([.day], from: startOfThatDay, to: startOfToday)
         return max(0, comps.day ?? 0)
+    }
+    
+    private func startOfDay(_ date: Date) -> Date {
+        Calendar.current.startOfDay(for: date)
+    }
+
+    private func groupedByDay(_ records: [ExerciseSessionRecord]) -> [(date: Date, items: [ExerciseSessionRecord])] {
+        let groups = Dictionary(grouping: records) { startOfDay($0.date) }
+        return groups
+            .map { (key: $0.key, value: $0.value.sorted { $0.date > $1.date }) }
+            .sorted { $0.key > $1.key }
+            .map { (date: $0.key, items: $0.value) }
     }
     
     private func deleteSession(_ record: ExerciseSessionRecord) {
