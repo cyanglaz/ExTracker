@@ -7,21 +7,25 @@
 
 import SwiftUI
 import SwiftData
+import Combine
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\Exercise.createdAt, order: .forward)]) private var exerciseData: [Exercise]
     @Query(sort: [SortDescriptor(\ExerciseSessionRecord.date, order: .reverse)]) private var sessionRecords: [ExerciseSessionRecord]
     
-    private var startOfToday: Date { Calendar.current.startOfDay(for: Date()) }
+    @StateObject private var alarmManager = ExAlarmManager.shared
+    @State private var countdownTick: Int = 0
 
-    private var latestTodayRecordAndExercise: (ExerciseSessionRecord, Exercise)? {
-        let todayRecords = sessionRecords.filter { Calendar.current.isDate($0.date, inSameDayAs: startOfToday) }
-            .sorted { $0.date > $1.date }
-        guard let record = todayRecords.first, let ex = exerciseData.first(where: { $0.id == record.exerciseID }) else { return nil }
-        return (record, ex)
+    private var hasPersistedRest: Bool {
+        guard let ts = RestTimerManager.shared.restEndDate?.timeIntervalSince1970 else {
+            return false
+        }
+        return ts > Date().timeIntervalSince1970
     }
     
+    private var startOfToday: Date { Calendar.current.startOfDay(for: Date()) }
+
     var exercises: [Exercise] {
         exerciseData.sorted { getDaysLeft(for: $0) < getDaysLeft(for: $1) }
     }
@@ -36,14 +40,17 @@ struct ContentView: View {
     @State private var editName: String = ""
     @State private var editFrequency: Int = 7
     @State private var editCategory: ExerciseCategory = .chest
-
+    
+    @State private var lastExercise: Exercise?
 
     var body: some View {
         NavigationStack {
             List {
                 ForEach(exercises, id: \.id) { exercise in
                     NavigationLink {
-                        ExerciseSessionView(exercise: exercise)
+                        ExerciseSessionView(exercise: exercise, onPopped: { ex in
+                            lastExercise = ex
+                        })
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: exercise.category.systemImage)
@@ -85,13 +92,47 @@ struct ContentView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if let (_, ex) = latestTodayRecordAndExercise {
+                    if let ex = lastExercise {
                         NavigationLink {
-                            ExerciseSessionView(exercise: ex)
+                            ExerciseSessionView(exercise: ex, onPopped: { ex in
+                                lastExercise = ex
+                            })
                         } label: {
                             Label("Today", systemImage: "bolt.fill")
                         }
                         .accessibilityLabel("Resume today's session")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if alarmManager.isAlerting {
+                        // Alarm is ringing: show stop button
+                        Button(role: .destructive) {
+                            RestTimerManager.shared.cancel()
+                        } label: {
+                            Image(systemName: "stop.circle.fill")
+                        }
+                        .tint(.red)
+                        .accessibilityLabel("Stop alarm")
+                    } else if hasPersistedRest {
+                        // Show a countdown label (no action) while timer is running
+                        if let ts = RestTimerManager.shared.restEndDate?.timeIntervalSince1970 {
+                            let remainingSeconds = max(0, Int(Date(timeIntervalSince1970: ts).timeIntervalSinceNow.rounded()))
+                            let color: Color = {
+                                switch remainingSeconds {
+                                case 0...30:
+                                    return .red
+                                case 31...60:
+                                    return .orange
+                                default:
+                                    return .green
+                                }
+                            }()
+                            Text("\(remainingSeconds)")
+                                .monospacedDigit()
+                                .id(countdownTick)
+                                .foregroundStyle(color)
+                                .accessibilityLabel("Rest remaining \(remainingSeconds) seconds")
+                        }
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -102,6 +143,9 @@ struct ContentView: View {
                         Label("Add Exercise", systemImage: "plus")
                     }
                 }
+            }
+            .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+                countdownTick &+= 5
             }
             .sheet(isPresented: $showingAddSheet) {
                 NavigationStack {
@@ -267,3 +311,4 @@ struct ContentView: View {
     ContentView()
         .modelContainer(for: Exercise.self, inMemory: true)
 }
+
