@@ -11,6 +11,9 @@ struct ExerciseSessionView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @StateObject private var alarmManager = ExAlarmManager.shared
+    @StateObject private var restManager = RestTimerManager.shared
+
+    var onPopped: ((Exercise) -> Void)? = nil
 
     let exercise: Exercise
     @Query private var records: [ExerciseSessionRecord]
@@ -20,13 +23,7 @@ struct ExerciseSessionView: View {
 
     @State private var sessionSets: [SessionSet] = []
     @State private var showingStartSet = false
-
-    @State private var isResting = false
-    @State private var isPaused = false
-    @State private var remainingSeconds: Int = 0
-    @State private var totalSeconds: Int = 0
-    @State private var restTimer: Timer? = nil
-    @State private var restEndDate: Date? = nil
+    @State private var hasCalledPopCallback = false
 
     struct SessionSet: Identifiable {
         let id = UUID()
@@ -37,8 +34,9 @@ struct ExerciseSessionView: View {
         let restSeconds: Int
     }
 
-    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil) {
+    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil, onPopped: ((Exercise) -> Void)? = nil) {
         self.exercise = exercise
+        self.onPopped = onPopped
         let exerciseID = exercise.id
         self._records = Query(
             filter: #Predicate<ExerciseSessionRecord> { $0.exerciseID == exerciseID },
@@ -53,7 +51,7 @@ struct ExerciseSessionView: View {
                     Button(role: .destructive) {
                         alarmManager.cancelActiveCountdown()
                         // Also make sure local rest state is cleared
-                        cancelRest()
+                        restManager.cancel()
                     } label: {
                         Label("Stop Alarm", systemImage: "stop.circle.fill")
                             .font(.headline)
@@ -64,19 +62,21 @@ struct ExerciseSessionView: View {
                 }
             }
 
-            if isResting {
+            if restManager.isResting {
                 SwiftUI.Section("Rest timer") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            ProgressView(value: Double(max(0, remainingSeconds)), total: Double(max(1, totalSeconds)))
-                            Text(timeString(from: remainingSeconds))
+                            ProgressView(value: Double(max(0, restManager.remainingSeconds)), total: Double(max(1, restManager.totalSeconds)))
+                            Text(timeString(from: restManager.remainingSeconds))
                                 .monospacedDigit()
                                 .frame(minWidth: 60, alignment: .trailing)
                         }
                         HStack(spacing: 16) {
-                            Button(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill", action:{})
-                                .onTapGesture { togglePause() }
-                            Button("Cancel", systemImage: "stop.fill", role: .destructive, action:{}).onTapGesture { cancelRest() }
+                            Button(restManager.isPaused ? "Resume" : "Pause", systemImage: restManager.isPaused ? "play.fill" : "pause.fill", action:{})
+                                .onTapGesture { restManager.isPaused ? restManager.resume() : restManager.pause() }
+                            Button("Cancel", systemImage: "stop.fill", role: .destructive) {
+                                restManager.cancel()
+                            }
                         }
                     }
                 }
@@ -167,8 +167,8 @@ struct ExerciseSessionView: View {
                 Button(action: {
                     saveSessionIfNeeded()
                     sessionSets.removeAll()
-                    cancelRest()
                     dismiss()
+                    if !hasCalledPopCallback { hasCalledPopCallback = true; onPopped?(exercise) }
                 }) {
                     Label("Back", systemImage: "chevron.left")
                 }
@@ -245,13 +245,15 @@ struct ExerciseSessionView: View {
                     // Dismiss the sheet back to Exercise page
                     showingStartSet = false
                     let total = max(0, min * 60 + sec)
-                    Task { await startRestTimer(totalSeconds: total) }
+                    restManager.startRest(totalSeconds: total)
                 },
                 currentSessionLastSet: currentLast,
                 previousSessionFinalSet: previousFinal
             )
         }
-        .onAppear { preloadTodaySessionIfAny() }
+        .onAppear {
+            preloadTodaySessionIfAny()
+        }
     }
 
     private func startOfDay(_ date: Date) -> Date {
@@ -315,13 +317,13 @@ struct ExerciseSessionView: View {
 
         exercise.frequency = max(exercise.frequency, 1)
     }
-    
+
     private func completeSession() {
         // If there are no sets, do not save anything
         guard !sessionSets.isEmpty else {
-            // Stop any running timer and dismiss
-            cancelRest()
+            // Dismiss
             dismiss()
+            if !hasCalledPopCallback { hasCalledPopCallback = true; onPopped?(exercise) }
             return
         }
 
@@ -329,136 +331,16 @@ struct ExerciseSessionView: View {
 
         // Clear current session sets
         sessionSets.removeAll()
-        // Stop any running timer
-        cancelRest()
         // Dismiss back to main list
         dismiss()
+        if !hasCalledPopCallback { hasCalledPopCallback = true; onPopped?(exercise) }
     }
-    
+
     private func daysAgo(from date: Date) -> Int {
         let startOfToday = Calendar.current.startOfDay(for: Date())
         let startOfThatDay = Calendar.current.startOfDay(for: date)
         let comps = Calendar.current.dateComponents([.day], from: startOfThatDay, to: startOfToday)
         return max(0, comps.day ?? 0)
-    }
-
-    private func startRestTimer(totalSeconds: Int) async {
-        guard totalSeconds > 0 else { return }
-        self.totalSeconds = totalSeconds
-        self.restEndDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
-        self.remainingSeconds = totalSeconds
-        self.isResting = true
-        self.isPaused = false
-        let authorizationStatus = await ExAlarmManager.shared.requestAuthorizationIfNeeded()
-
-        startTimer(totalSeconds: totalSeconds)
-        
-        if (authorizationStatus == .denied) {
-            scheduleNotification(totalSeconds: totalSeconds)
-        } else {
-           await scheduleAlarm(totalSeconds: totalSeconds)
-        }
-    }
-    
-    private func startTimer(totalSeconds: Int) {
-        // Invalidate any existing timer and start a new UI timer
-        restTimer?.invalidate()
-        restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            guard !isPaused else { return }
-            let remaining = max(0, Int((restEndDate ?? Date()).timeIntervalSinceNow.rounded()))
-            remainingSeconds = remaining
-            if remaining <= 0 {
-                timer.invalidate()
-                isResting = false
-                restEndDate = nil
-                playCompletionFeedback()
-            }
-        }
-    }
-    
-    private func scheduleNotification(totalSeconds: Int) {
-        // Schedule local notification for when the timer ends
-        scheduleRestCompletionNotification(at: self.restEndDate!)
-    }
-    
-    private func scheduleAlarm(totalSeconds: Int) async {
-        let alarmCooldownRequest = AppCountdownRequest(seconds: totalSeconds, title: "Rest Complete", message: "")
-        do {
-            try await ExAlarmManager.shared.scheduleCountdown(alarmCooldownRequest)
-        } catch {
-            scheduleNotification(totalSeconds: totalSeconds)
-        }
-    }
-
-    private func togglePause() {
-        guard isResting else { return }
-        isPaused.toggle()
-        // When pausing, capture remainingSeconds; when resuming, recompute end date
-        if isPaused {
-            ExAlarmManager.shared.togglePauseActiveAlarm(on: true)
-            // Freeze remainingSeconds by stopping updates; timer closure respects isPaused
-        } else {
-            // Resuming: set a new end date from current remainingSeconds
-            if remainingSeconds > 0 {
-                restEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
-                // Re-schedule the notification for the new end date
-                scheduleRestCompletionNotification(at: restEndDate!)
-            }
-            ExAlarmManager.shared.togglePauseActiveAlarm(on: false)
-        }
-    }
-
-    private func cancelRest() {
-        restTimer?.invalidate()
-        isResting = false
-        isPaused = false
-        remainingSeconds = 0
-        totalSeconds = 0
-        restEndDate = nil
-        cancelRestCompletionNotification()
-        ExAlarmManager.shared.cancelActiveCountdown()
-    }
-
-    private func playCompletionFeedback() {
-        #if canImport(UIKit)
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
-        #endif
-    }
-
-    private func scheduleRestCompletionNotification(at date: Date) {
-        let center = UNUserNotificationCenter.current()
-        // Remove any existing pending notification for rest completion
-        cancelRestCompletionNotification()
-
-        let content = UNMutableNotificationContent()
-        content.title = "Rest complete"
-        content.body = "Time to start your next set."
-        content.sound = .default
-        if #available(iOS 15.0, *) {
-            content.interruptionLevel = .timeSensitive
-        }
-
-        let triggerDate = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-        let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDate, repeats: false)
-
-        let request = UNNotificationRequest(identifier: "exercise.rest.complete", content: content, trigger: trigger)
-        center.add(request) { error in
-            if let error = error {
-                print("Failed to schedule rest notification: \(error)")
-            }
-        }
-    }
-
-    private func cancelRestCompletionNotification() {
-        let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: ["exercise.rest.complete"])
-    }
-
-    private func timeString(from seconds: Int) -> String {
-        let m = seconds / 60
-        let s = seconds % 60
-        return String(format: "%d:%02d", m, s)
     }
     
     private func getLatestRecord() -> ExerciseSessionRecord? {
@@ -467,11 +349,15 @@ struct ExerciseSessionView: View {
             a.date < b.date
         }
     }
+    
+    private func timeString(from remainingSeconds: Int) -> String {
+        let minutes = remainingSeconds / 60
+        let seconds = remainingSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
 }
-
 #Preview {
     let container = try! ModelContainer(for: Exercise.self, configurations: .init(isStoredInMemoryOnly: true))
     let ex = Exercise(name: "Bench Press", frequency: 3, category: .chest)
-    return ExerciseSessionView(exercise: ex)
-        .modelContainer(container)
+    return ExerciseSessionView(exercise: ex, onPopped: nil)
 }
