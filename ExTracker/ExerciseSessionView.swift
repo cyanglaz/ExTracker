@@ -115,7 +115,7 @@ struct ExerciseSessionView: View {
                 }
             }
 
-            if let displayRecord = (isEditingExisting ? records.dropFirst().first : records.first) {
+            if let displayRecord = latestNonTodayRecord() {
                 SwiftUI.Section("Last session") {
                     HStack {
                         Image(systemName: "calendar")
@@ -135,16 +135,15 @@ struct ExerciseSessionView: View {
                                 .foregroundStyle( .secondary)
                         }
                     }
-                    if let record = records.first {
+                    if let today = todayRecord() ?? records.first {
                         Button {
-                            // Load the record into the current view for editing/continuation
-                            existingRecord = record
-                            self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
-                                SessionSet(weight: w, reps: r, timestamp: record.date, restMinutes: 0, restSeconds: 0)
+                            existingRecord = todayRecord() ?? today
+                            self.sessionSets = zip(existingRecord?.weights ?? [], existingRecord?.reps ?? []).map { (w, r) in
+                                SessionSet(weight: w, reps: r, timestamp: Date(), restMinutes: 0, restSeconds: 0)
                             }
                             self.isEditingExisting = true
                         } label: {
-                            Label(isEditingExisting ? "Editing last session" : "Continue last session", systemImage: isEditingExisting ? "pencil" : "play.circle")
+                            Label(todayRecord() != nil ? "Editing today's session" : "Continue last session", systemImage: todayRecord() != nil ? "pencil" : "play.circle")
                         }
                     }
                 }
@@ -248,25 +247,60 @@ struct ExerciseSessionView: View {
                 previousSessionFinalSet: previousFinal
             )
         }
+        .onAppear { preloadTodaySessionIfAny() }
+    }
+
+    private func startOfDay(_ date: Date) -> Date {
+        Calendar.current.startOfDay(for: date)
+    }
+
+    private func isSameDay(_ a: Date, _ b: Date) -> Bool {
+        Calendar.current.isDate(a, inSameDayAs: b)
+    }
+
+    private func todayRecord() -> ExerciseSessionRecord? {
+        let today = startOfDay(Date())
+        return records.first { isSameDay($0.date, today) }
+    }
+
+    private func latestNonTodayRecord() -> ExerciseSessionRecord? {
+        let today = startOfDay(Date())
+        return records
+            .filter { !isSameDay($0.date, today) }
+            .sorted { $0.date > $1.date }
+            .first
+    }
+
+    private func preloadTodaySessionIfAny() {
+        guard sessionSets.isEmpty else { return }
+        if let record = todayRecord() {
+            existingRecord = record
+            isEditingExisting = true
+            self.sessionSets = zip(record.weights, record.reps).map { (w, r) in
+                SessionSet(weight: w, reps: r, timestamp: Date(), restMinutes: 0, restSeconds: 0)
+            }
+        }
     }
 
     private func saveSessionIfNeeded() {
         guard !sessionSets.isEmpty else { return }
 
-        if let record = existingRecord {
-        
-        } else {
-            // Create a new record
-            let record = ExerciseSessionRecord(
+        let today = startOfDay(Date())
+        var record = todayRecord()
+        if record == nil {
+            record = ExerciseSessionRecord(
                 exerciseID: exercise.id,
                 date: Date(),
                 weights: sessionSets.map { $0.weight },
                 reps: sessionSets.map { $0.reps }
             )
-            modelContext.insert(record)
+            if let newRecord = record { modelContext.insert(newRecord) }
+        } else {
+            record?.weights = sessionSets.map { $0.weight }
+            record?.reps = sessionSets.map { $0.reps }
         }
+        existingRecord = record
 
-        // Reset daysLeft to at least 1 (acts as max frequency placeholder)
         exercise.frequency = max(exercise.frequency, 1)
     }
     

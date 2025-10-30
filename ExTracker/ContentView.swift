@@ -238,7 +238,7 @@ struct ContentView: View {
         guard let last = latestRecord(for: exercise) else {
             return 0
         }
-        let diff = Calendar.current.dateComponents([.day], from: last.date, to: Date()).day ?? 0
+        let diff = Calendar.current.component(.day, from: Date()) - Calendar.current.component(.day, from: last.date)
         return exercise.frequency - diff
     }
 }
