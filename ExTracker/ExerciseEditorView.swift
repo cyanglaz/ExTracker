@@ -47,7 +47,7 @@ struct ExerciseEditorView: View {
                             Label(cat.displayName, systemImage: cat.systemImage)
                                 .tag(cat)
                         }
-                    }
+                    }.ignoresSafeArea(.keyboard)
                     Stepper(value: $frequency, in: 1...365) {
                         HStack {
                             Text("Frequency")
@@ -56,7 +56,7 @@ struct ExerciseEditorView: View {
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
-                    }
+                    }.ignoresSafeArea(.keyboard)
                 }
             }
             .navigationTitle(mode == .add ? "New Exercise" : "Edit Exercise")

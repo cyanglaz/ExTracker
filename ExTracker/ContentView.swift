@@ -149,32 +149,28 @@ struct ContentView: View {
                 countdownTick &+= 1
             }
             .sheet(isPresented: $showingAddSheet) {
-                NavigationStack {
-                    ExerciseEditorView(mode: .add, exercise: nil, onCancel: {
-                        dismissAddSheet()
-                    }, onSave: { name, freq, category in
-                        withAnimation {
-                            let new = Exercise(name: name, frequency: freq, category: category)
-                            modelContext.insert(new)
-                        }
-                        dismissAddSheet()
-                    })
-                }
+                ExerciseEditorView(mode: .add, exercise: nil, onCancel: {
+                    dismissAddSheet()
+                }, onSave: { name, freq, category in
+                    withAnimation {
+                        let new = Exercise(name: name, frequency: freq, category: category)
+                        modelContext.insert(new)
+                    }
+                    dismissAddSheet()
+                })
             }
             .sheet(isPresented: $showingEditSheet) {
-                NavigationStack {
-                    ExerciseEditorView(mode: .edit, exercise: exerciseToEdit, onCancel: {
-                        cancelEdit()
-                    }, onSave: { name, freq, category in
-                        guard let ex = exerciseToEdit else { return }
-                        withAnimation {
-                            ex.name = name
-                            ex.frequency = freq
-                            ex.category = category
-                        }
-                        cancelEdit()
-                    })
-                }
+                ExerciseEditorView(mode: .edit, exercise: exerciseToEdit, onCancel: {
+                    cancelEdit()
+                }, onSave: { name, freq, category in
+                    guard let ex = exerciseToEdit else { return }
+                    withAnimation {
+                        ex.name = name
+                        ex.frequency = freq
+                        ex.category = category
+                    }
+                    cancelEdit()
+                })
             }
             .navigationTitle("Exercises")
             .navigationBarTitleDisplayMode(.large)
