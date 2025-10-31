@@ -31,9 +31,6 @@ struct ContentView: View {
     }
     
     @State private var showingAddSheet = false
-    @State private var draftName: String = ""
-    @State private var frequency: Int = 7
-    @State private var draftCategory: ExerciseCategory = .chest
 
     @State private var showingEditSheet = false
     @State private var exerciseToEdit: Exercise?
@@ -42,6 +39,10 @@ struct ContentView: View {
     @State private var editCategory: ExerciseCategory = .chest
     
     @State private var lastExercise: Exercise?
+
+    private func dismissAddSheet() {
+        showingAddSheet = false
+    }
 
     var body: some View {
         NavigationStack {
@@ -149,92 +150,30 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingAddSheet) {
                 NavigationStack {
-                    Form {
-                        Section("Details") {
-                            TextField("Exercise name", text: $draftName)
-                            Picker("Category", selection: $draftCategory) {
-                                ForEach(ExerciseCategory.allCases) { cat in
-                                    Label(cat.displayName, systemImage: cat.systemImage)
-                                        .tag(cat)
-                                }
-                            }
-                            Stepper(value: $frequency, in: 1...365) {
-                                HStack {
-                                    Text("Frequency (days)")
-                                    Spacer()
-                                    Text("\(frequency)").monospacedDigit()
-                                }
-                            }
+                    ExerciseEditorView(mode: .add, exercise: nil, onCancel: {
+                        dismissAddSheet()
+                    }, onSave: { name, freq, category in
+                        withAnimation {
+                            let new = Exercise(name: name, frequency: freq, category: category)
+                            modelContext.insert(new)
                         }
-                    }
-                    .navigationTitle("New Exercise")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                showingAddSheet = false
-                                draftName = ""
-                                frequency = 7
-                                draftCategory = .chest
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") {
-                                let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !trimmed.isEmpty else { return }
-                                withAnimation {
-                                    let new = Exercise(name: trimmed, frequency: frequency, category: draftCategory)
-                                    modelContext.insert(new)
-                                }
-                                showingAddSheet = false
-                                draftName = ""
-                                frequency = 7
-                                draftCategory = .chest
-                            }
-                            .disabled(draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
+                        dismissAddSheet()
+                    })
                 }
             }
             .sheet(isPresented: $showingEditSheet) {
                 NavigationStack {
-                    Form {
-                        Section("Details") {
-                            TextField("Exercise name", text: $editName)
-                            Picker("Category", selection: $editCategory) {
-                                ForEach(ExerciseCategory.allCases) { cat in
-                                    Label(cat.displayName, systemImage: cat.systemImage)
-                                        .tag(cat)
-                                }
-                            }
-                            Stepper(value: $editFrequency, in: 1...365) {
-                                HStack {
-                                    Text("Frequency (days)")
-                                    Spacer()
-                                    Text("\(editFrequency)").monospacedDigit()
-                                }
-                            }
+                    ExerciseEditorView(mode: .edit, exercise: exerciseToEdit, onCancel: {
+                        cancelEdit()
+                    }, onSave: { name, freq, category in
+                        guard let ex = exerciseToEdit else { return }
+                        withAnimation {
+                            ex.name = name
+                            ex.frequency = freq
+                            ex.category = category
                         }
-                        
-                        Section {
-                            Button(role: .destructive) {
-                                deleteEditedExercise()
-                            } label: {
-                                Text("Delete Exercise")
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        
-                    }
-                    .navigationTitle("Edit Exercise")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { cancelEdit() }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") { saveEdit() }
-                                .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
+                        cancelEdit()
+                    })
                 }
             }
             .navigationTitle("Exercises")
