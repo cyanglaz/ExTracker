@@ -13,7 +13,7 @@ struct ExerciseSessionView: View {
     @StateObject private var alarmManager = ExAlarmManager.shared
     @StateObject private var restManager = RestTimerManager.shared
 
-    var onPopped: ((Exercise) -> Void)? = nil
+    var onPopped: ((Exercise) -> Void)
 
     let exercise: Exercise
     @Query private var records: [ExerciseSessionRecord]
@@ -23,7 +23,6 @@ struct ExerciseSessionView: View {
 
     @State private var sessionSets: [SessionSet] = []
     @State private var showingStartSet = false
-    @State private var hasCalledPopCallback = false
 
     struct SessionSet: Identifiable {
         let id = UUID()
@@ -34,7 +33,7 @@ struct ExerciseSessionView: View {
         let restSeconds: Int
     }
 
-    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil, onPopped: ((Exercise) -> Void)? = nil) {
+    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil, onPopped: @escaping ((Exercise) -> Void)) {
         self.exercise = exercise
         self.onPopped = onPopped
         let exerciseID = exercise.id
@@ -236,6 +235,9 @@ struct ExerciseSessionView: View {
         .onAppear {
             preloadTodaySessionIfAny()
         }
+        .onDisappear() {
+            onPopped(exercise)
+        }
     }
 
     private func startOfDay(_ date: Date) -> Date {
@@ -302,7 +304,6 @@ struct ExerciseSessionView: View {
 
     private func completeSession() {
         dismiss()
-        if !hasCalledPopCallback { hasCalledPopCallback = true; onPopped?(exercise) }
     }
 
     private func daysAgo(from date: Date) -> Int {
@@ -328,5 +329,5 @@ struct ExerciseSessionView: View {
 #Preview {
     let container = try! ModelContainer(for: Exercise.self, configurations: .init(isStoredInMemoryOnly: true))
     let ex = Exercise(name: "Bench Press", frequency: 3, category: .chest)
-    return ExerciseSessionView(exercise: ex, onPopped: nil)
+    return ExerciseSessionView(exercise: ex, onPopped: { ex in return })
 }

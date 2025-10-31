@@ -144,8 +144,8 @@ struct ContentView: View {
                     }
                 }
             }
-            .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
-                countdownTick &+= 5
+            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                countdownTick &+= 1
             }
             .sheet(isPresented: $showingAddSheet) {
                 NavigationStack {
