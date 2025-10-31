@@ -13,7 +13,7 @@ struct ExerciseSessionView: View {
     @StateObject private var alarmManager = ExAlarmManager.shared
     @StateObject private var restManager = RestTimerManager.shared
 
-    var onPopped: ((Exercise) -> Void)? = nil
+    var onPopped: ((Exercise) -> Void)
 
     let exercise: Exercise
     @Query private var records: [ExerciseSessionRecord]
@@ -23,7 +23,6 @@ struct ExerciseSessionView: View {
 
     @State private var sessionSets: [SessionSet] = []
     @State private var showingStartSet = false
-    @State private var hasCalledPopCallback = false
 
     struct SessionSet: Identifiable {
         let id = UUID()
@@ -34,7 +33,7 @@ struct ExerciseSessionView: View {
         let restSeconds: Int
     }
 
-    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil, onPopped: ((Exercise) -> Void)? = nil) {
+    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil, onPopped: @escaping ((Exercise) -> Void)) {
         self.exercise = exercise
         self.onPopped = onPopped
         let exerciseID = exercise.id
@@ -93,16 +92,9 @@ struct ExerciseSessionView: View {
                 } else {
                     ForEach(sessionSets) { set in
                         HStack(spacing: 12) {
-                            if !set.weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Label {
-                                    Text("\(set.weight) lbs")
-                                } icon: {
-                                    Image(systemName: "scalemass")
-                                }
-                            }
-
+                            let w = set.weight
+                            Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
                             Spacer()
-
                             Text("x \(set.reps)")
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
@@ -161,18 +153,7 @@ struct ExerciseSessionView: View {
             }
         }
         .navigationTitle(exercise.name)
-        .navigationBarBackButtonHidden(true)
         .toolbar(content: {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: {
-                    saveSessionIfNeeded()
-                    sessionSets.removeAll()
-                    dismiss()
-                    if !hasCalledPopCallback { hasCalledPopCallback = true; onPopped?(exercise) }
-                }) {
-                    Label("Back", systemImage: "chevron.left")
-                }
-            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink {
                     SessionsHistoryView(exercise: exercise, records: records)
@@ -229,8 +210,8 @@ struct ExerciseSessionView: View {
                 return StartSetView.PreviousSet(
                     weight: lastWeight,
                     reps: lastRep,
-                    restMinutes: 2,
-                    restSeconds: 30
+                    restMinutes: DefaultRestMinutes,
+                    restSeconds: DefaultRestSeconds,
                 )
             }()
 
@@ -253,6 +234,9 @@ struct ExerciseSessionView: View {
         }
         .onAppear {
             preloadTodaySessionIfAny()
+        }
+        .onDisappear() {
+            onPopped(exercise)
         }
     }
 
@@ -319,21 +303,7 @@ struct ExerciseSessionView: View {
     }
 
     private func completeSession() {
-        // If there are no sets, do not save anything
-        guard !sessionSets.isEmpty else {
-            // Dismiss
-            dismiss()
-            if !hasCalledPopCallback { hasCalledPopCallback = true; onPopped?(exercise) }
-            return
-        }
-
-        saveSessionIfNeeded()
-
-        // Clear current session sets
-        sessionSets.removeAll()
-        // Dismiss back to main list
         dismiss()
-        if !hasCalledPopCallback { hasCalledPopCallback = true; onPopped?(exercise) }
     }
 
     private func daysAgo(from date: Date) -> Int {
@@ -359,5 +329,5 @@ struct ExerciseSessionView: View {
 #Preview {
     let container = try! ModelContainer(for: Exercise.self, configurations: .init(isStoredInMemoryOnly: true))
     let ex = Exercise(name: "Bench Press", frequency: 3, category: .chest)
-    return ExerciseSessionView(exercise: ex, onPopped: nil)
+    return ExerciseSessionView(exercise: ex, onPopped: { ex in return })
 }

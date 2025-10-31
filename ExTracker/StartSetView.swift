@@ -20,8 +20,8 @@ struct StartSetView: View {
 
     @State private var weight: String = ""
     @State private var reps: String = ""
-    @State private var restMinutes: Int = 2
-    @State private var restSeconds: Int = 30
+    @State private var restMinutes: Int = DefaultRestMinutes
+    @State private var restSeconds: Int = DefaultRestSeconds
 
     @State private var showRepsEmptyAlert = false
     @State private var showRestDoneAlert = false
@@ -101,8 +101,6 @@ struct StartSetView: View {
         // Only prefill if user hasn't typed anything and rest is still at initial defaults
         let isWeightDefault = weight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isRepsDefault = reps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let isRestDefault = (restMinutes == 2 && restSeconds == 0)
-        guard isWeightDefault || isRestDefault else { return }
 
         let source = currentSessionLastSet ?? previousSessionFinalSet
         guard let source else { return }
@@ -113,10 +111,8 @@ struct StartSetView: View {
         if isRepsDefault {
             reps = source.reps
         }
-        if isRestDefault {
-            restMinutes = max(0, source.restMinutes)
-            restSeconds = min(max(0, source.restSeconds), 59)
-        }
+        restMinutes = max(0, source.restMinutes)
+        restSeconds = min(max(0, source.restSeconds), 59)
     }
 }
 
