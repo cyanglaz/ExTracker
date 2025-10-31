@@ -33,10 +33,8 @@ struct SessionsHistoryView: View {
                             let count = max(rec.reps.count, rec.weights.count)
                             ForEach(0..<count, id: \.self) { idx in
                                 HStack(spacing: 12) {
-                                    let w = idx < rec.weights.count ? rec.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : ""
-                                    if !w.isEmpty {
-                                        Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
-                                    }
+                                    let w = idx < rec.weights.count ? rec.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : "0"
+                                    Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
                                     Spacer()
                                     Text("x \(idx < rec.reps.count ? rec.reps[idx] : "-")")
                                         .monospacedDigit()
