@@ -43,7 +43,7 @@ struct StartSetView: View {
                             .monospacedDigit()
                     }
                 }
-                Stepper(value: $restSeconds, in: 0...55, step: 5) {
+                Stepper(value: $restSeconds, in: 0...60, step: 30) {
                     HStack {
                         Text("Rest seconds")
                         Spacer()
@@ -124,3 +124,4 @@ struct StartSetView: View {
         previousSessionFinalSet: StartSetView.PreviousSet(weight: "130 lb", reps:"8", restMinutes: 2, restSeconds: 30)
     )
 }
+
