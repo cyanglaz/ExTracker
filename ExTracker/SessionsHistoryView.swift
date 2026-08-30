@@ -99,7 +99,7 @@ struct SessionsHistoryView: View {
 
 #Preview {
     let container = try! ModelContainer(for: Exercise.self, ExerciseSessionRecord.self, configurations: .init(isStoredInMemoryOnly: true))
-    let ex = Exercise(name: "Squat", frequency: 3, category: .leg)
+    let ex = Exercise(name: "Squat", category: .leg)
     return NavigationStack { SessionsHistoryView(exercise: ex) }
         .modelContainer(container)
 }

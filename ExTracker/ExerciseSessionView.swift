@@ -14,6 +14,7 @@ struct ExerciseSessionView: View {
     @StateObject private var restManager = RestTimerManager.shared
 
     var onPopped: ((Exercise) -> Void)
+    var onCompleted: (() -> Void)?
 
     let exercise: Exercise
     @Query private var records: [ExerciseSessionRecord]
@@ -33,9 +34,10 @@ struct ExerciseSessionView: View {
         let restSeconds: Int
     }
 
-    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil, onPopped: @escaping ((Exercise) -> Void)) {
+    init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil, onPopped: @escaping ((Exercise) -> Void), onCompleted: (() -> Void)? = nil) {
         self.exercise = exercise
         self.onPopped = onPopped
+        self.onCompleted = onCompleted
         let exerciseID = exercise.id
         self._records = Query(
             filter: #Predicate<ExerciseSessionRecord> { $0.exerciseID == exerciseID },
@@ -298,11 +300,12 @@ struct ExerciseSessionView: View {
         }
         existingRecord = record
         isEditingExisting = true
-
-        exercise.frequency = max(exercise.frequency, 1)
     }
 
     private func completeSession() {
+        if !sessionSets.isEmpty {
+            onCompleted?()
+        }
         dismiss()
     }
 
@@ -328,6 +331,6 @@ struct ExerciseSessionView: View {
 }
 #Preview {
     let container = try! ModelContainer(for: Exercise.self, configurations: .init(isStoredInMemoryOnly: true))
-    let ex = Exercise(name: "Bench Press", frequency: 3, category: .chest)
+    let ex = Exercise(name: "Bench Press", category: .chest)
     return ExerciseSessionView(exercise: ex, onPopped: { ex in return })
 }

@@ -1,5 +1,4 @@
 import Foundation
-import _SwiftData_SwiftUI
 import SwiftData
 
 enum ExerciseCategory: String, Codable, CaseIterable, Identifiable {
@@ -34,20 +33,18 @@ enum ExerciseCategory: String, Codable, CaseIterable, Identifiable {
 
 @Model
 final class Exercise {
-        
     var id: UUID
     var name: String
     var category: ExerciseCategory
-    var frequency: Int
+    /// Position in the exercise database. Nil for legacy records until first migration.
+    var sortOrder: Int?
     var createdAt: Date
-    
-    init(id: UUID = UUID(), name: String, frequency: Int, category: ExerciseCategory = .chest, createdAt: Date = Date()) {
+
+    init(id: UUID = UUID(), name: String, sortOrder: Int? = nil, category: ExerciseCategory = .chest, createdAt: Date = Date()) {
         self.id = id
         self.name = name
-        self.frequency = frequency
+        self.sortOrder = sortOrder
         self.category = category
         self.createdAt = createdAt
     }
-    
 }
-

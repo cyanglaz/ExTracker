@@ -14,9 +14,9 @@ struct ExTrackerApp: App {
         let schema = Schema([
             Exercise.self,
             ExerciseSessionRecord.self,
+            ExerciseGroup.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
