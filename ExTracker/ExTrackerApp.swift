@@ -19,7 +19,7 @@ struct ExTrackerApp: App {
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
+        } catch { 
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()

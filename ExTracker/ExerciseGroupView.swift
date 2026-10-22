@@ -4,6 +4,7 @@ import Combine
 
 struct ExerciseGroupView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     let group: ExerciseGroup
     let allExercises: [Exercise]
     let onExerciseCompleted: () -> Void
@@ -142,6 +143,20 @@ struct ExerciseGroupView: View {
                 })
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            Button(action: completeGroup) {
+                Text("Complete")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding([.horizontal, .bottom])
+        }
+    }
+
+    private func completeGroup() {
+        onExerciseCompleted()
+        dismiss()
     }
 
     private func moveExercises(from source: IndexSet, to destination: Int) {

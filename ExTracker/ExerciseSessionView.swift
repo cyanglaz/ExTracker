@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Charts
 import UserNotifications
 
 #if canImport(UIKit)
@@ -24,6 +25,7 @@ struct ExerciseSessionView: View {
 
     @State private var sessionSets: [SessionSet] = []
     @State private var showingStartSet = false
+    @State private var selectedTrendRecordID: UUID? = nil
 
     struct SessionSet: Identifiable {
         let id = UUID()
@@ -32,6 +34,13 @@ struct ExerciseSessionView: View {
         let timestamp: Date
         let restMinutes: Int
         let restSeconds: Int
+    }
+
+    struct TrendPoint: Identifiable {
+        let id: UUID
+        let index: Int
+        let record: ExerciseSessionRecord
+        let volume: Double
     }
 
     init(exercise: Exercise, latestRecord: ExerciseSessionRecord? = nil, onPopped: @escaping ((Exercise) -> Void), onCompleted: (() -> Void)? = nil) {
@@ -120,36 +129,23 @@ struct ExerciseSessionView: View {
                 }
             }
 
-            if let displayRecord = latestNonTodayRecord() {
-                SwiftUI.Section("Last session") {
-                    HStack {
-                        Image(systemName: "calendar")
-                        Text("\(daysAgo(from: displayRecord.date)) days ago")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(displayRecord.date, style: .date)
-                    }
-                    let count = max(displayRecord.reps.count, displayRecord.weights.count)
-                    ForEach(0..<count, id: \.self) { idx in
-                        HStack(spacing: 12) {
-                            let w = idx < displayRecord.weights.count ? displayRecord.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : "0"
-                            Label { Text("\(w) lbs") } icon: { Image(systemName: "scalemass") }
+            let points = trendPoints()
+            if !points.isEmpty {
+                SwiftUI.Section("Workout trend") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Last \(points.count) \(points.count == 1 ? "session" : "sessions") • Total Volume (lbs)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             Spacer()
-                            Text("x \(idx < displayRecord.reps.count ? displayRecord.reps[idx] : "-")")
-                                .monospacedDigit()
-                                .foregroundStyle( .secondary)
+                            Text("Tap a dot for details")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
-                    }
-                    if let today = todayRecord() ?? records.first {
-                        Button {
-                            existingRecord = todayRecord() ?? today
-                            self.sessionSets = zip(existingRecord?.weights ?? [], existingRecord?.reps ?? []).map { (w, r) in
-                                SessionSet(weight: w, reps: r, timestamp: Date(), restMinutes: 0, restSeconds: 0)
-                            }
-                            self.isEditingExisting = true
-                        } label: {
-                            Label(todayRecord() != nil ? "Editing today's session" : "Continue last session", systemImage: todayRecord() != nil ? "pencil" : "play.circle")
-                        }
+
+                        trendChartView(points: points)
+                            .frame(height: 200)
+                            .padding(.vertical, 4)
                     }
                 }
             }
@@ -255,12 +251,218 @@ struct ExerciseSessionView: View {
         return records.first { isSameDay($0.date, today) }
     }
 
-    private func latestNonTodayRecord() -> ExerciseSessionRecord? {
+    private func trendPoints() -> [TrendPoint] {
         let today = startOfDay(Date())
-        return records
+        let recentRecords = records
             .filter { !isSameDay($0.date, today) }
             .sorted { $0.date > $1.date }
-            .first
+            .prefix(10)
+            .sorted { $0.date < $1.date }
+
+        return recentRecords.enumerated().map { idx, record in
+            TrendPoint(
+                id: record.id,
+                index: idx,
+                record: record,
+                volume: totalVolume(for: record)
+            )
+        }
+    }
+
+    private func parseNumericValue(_ text: String) -> Double {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let exact = Double(trimmed) {
+            return exact
+        }
+        let numericPrefix = trimmed.prefix { $0.isNumber || $0 == "." }
+        return Double(numericPrefix) ?? 0
+    }
+
+    private func totalVolume(for record: ExerciseSessionRecord) -> Double {
+        let count = max(record.weights.count, record.reps.count)
+        guard count > 0 else { return 0 }
+        var total: Double = 0
+        for idx in 0..<count {
+            let weight = idx < record.weights.count ? parseNumericValue(record.weights[idx]) : 0
+            let reps = idx < record.reps.count ? parseNumericValue(record.reps[idx]) : 0
+            total += weight * reps
+        }
+        return total
+    }
+
+    @ViewBuilder
+    private func trendChartView(points: [TrendPoint]) -> some View {
+        let maxVolume = points.map(\.volume).max() ?? 0
+        let yUpperBound = maxVolume > 0 ? maxVolume * 1.15 : 100
+        let xUpperBound = Double(max(0, points.count - 1))
+        let xDomain: ClosedRange<Double> = points.count <= 1 ? -0.5...0.5 : -0.35...(xUpperBound + 0.35)
+        let accentColor = exercise.category.displayColor
+
+        Chart(points) { point in
+            if points.count > 1 {
+                AreaMark(
+                    x: .value("Session", Double(point.index)),
+                    y: .value("Volume", point.volume)
+                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [accentColor.opacity(0.25), accentColor.opacity(0.02)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+                LineMark(
+                    x: .value("Session", Double(point.index)),
+                    y: .value("Volume", point.volume)
+                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(accentColor)
+                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+            }
+
+            PointMark(
+                x: .value("Session", Double(point.index)),
+                y: .value("Volume", point.volume)
+            )
+            .symbolSize(selectedTrendRecordID == point.id ? 110 : 70)
+            .foregroundStyle(accentColor)
+        }
+        .chartXScale(domain: xDomain)
+        .chartYScale(domain: 0...yUpperBound)
+        .chartXAxis {
+            AxisMarks(values: points.map { Double($0.index) }) { value in
+                AxisGridLine()
+                AxisTick()
+                if let doubleIdx = value.as(Double.self) {
+                    let idx = Int(doubleIdx.rounded())
+                    if idx >= 0 && idx < points.count {
+                        AxisValueLabel(centered: true) {
+                            Text(points[idx].record.date, format: .dateTime.month(.defaultDigits).day())
+                                .font(.caption2)
+                        }
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading)
+        }
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                if let plotFrame = proxy.plotFrame {
+                    let plotOrigin = geometry[plotFrame].origin
+                    ForEach(points) { point in
+                        if let pos = proxy.position(for: (x: Double(point.index), y: point.volume)) {
+                            let isSelected = Binding<Bool>(
+                                get: { selectedTrendRecordID == point.id },
+                                set: { newValue in
+                                    if newValue {
+                                        selectedTrendRecordID = point.id
+                                    } else if selectedTrendRecordID == point.id {
+                                        selectedTrendRecordID = nil
+                                    }
+                                }
+                            )
+
+                            Button {
+                                selectedTrendRecordID = point.id
+                            } label: {
+                                Circle()
+                                    .fill(Color.clear)
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Circle())
+                                    .overlay {
+                                        Circle()
+                                            .strokeBorder(
+                                                selectedTrendRecordID == point.id ? accentColor : Color.clear,
+                                                lineWidth: 2
+                                            )
+                                            .frame(width: 18, height: 18)
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Session on \(point.record.date.formatted(date: .abbreviated, time: .omitted)), total volume \(Int(point.volume.rounded())) pounds")
+                            .popover(isPresented: isSelected, arrowEdge: .bottom) {
+                                sessionDetailPopup(for: point)
+                                    .presentationCompactAdaptation(.popover)
+                            }
+                            .position(x: plotOrigin.x + pos.x, y: plotOrigin.y + pos.y)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sessionDetailPopup(for point: TrendPoint) -> some View {
+        let record = point.record
+        let setCount = max(record.reps.count, record.weights.count)
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Label {
+                    Text(record.date, style: .date)
+                        .font(.subheadline.weight(.semibold))
+                } icon: {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(exercise.category.displayColor)
+                }
+                Spacer(minLength: 8)
+                Text("\(daysAgo(from: record.date))d ago")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text("Total Volume")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(Int(point.volume.rounded())) lbs")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+            }
+
+            Divider()
+
+            if setCount == 0 {
+                Text("No sets recorded")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(0..<setCount, id: \.self) { idx in
+                        let wRaw = idx < record.weights.count ? record.weights[idx].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                        let w = wRaw.isEmpty ? "0" : wRaw
+                        let r = idx < record.reps.count ? record.reps[idx] : "-"
+
+                        HStack(spacing: 12) {
+                            Text("Set \(idx + 1)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 40, alignment: .leading)
+                            Label {
+                                Text("\(w) lbs")
+                                    .font(.subheadline)
+                            } icon: {
+                                Image(systemName: "scalemass")
+                                    .font(.caption)
+                            }
+                            Spacer(minLength: 12)
+                            Text("x \(r)")
+                                .font(.subheadline)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(minWidth: 230)
     }
 
     private func preloadTodaySessionIfAny() {
